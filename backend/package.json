@@ -1,0 +1,50 @@
+{
+  "name": "chat-whatsapp-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Central de Atendimento - API, WebSocket, webhook da Evolution e worker de filas",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "start:worker": "node dist/worker.js",
+    "migrate": "node dist/database/migrate.js",
+    "test": "node --test \"test/**/*.test.mjs\""
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.5.1",
+    "@nestjs/core": "^12.5.1",
+    "@nestjs/platform-express": "^12.5.1",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "@socket.io/redis-emitter": "^5.1.0",
+    "argon2": "^0.45.2",
+    "bullmq": "^6.7.8",
+    "file-type": "^22.3.0",
+    "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
+    "kysely": "^0.29.9",
+    "multer": "^2.5.0",
+    "mysql2": "^3.24.6",
+    "nestjs-pino": "^5.3.2",
+    "nodemailer": "^10.6.0",
+    "pdfkit": "^0.20.2",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "socket.io": "^4.8.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^24.10.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pdfkit": "^0.17.7",
+    "typescript": "~6.0.3"
+  }
+}

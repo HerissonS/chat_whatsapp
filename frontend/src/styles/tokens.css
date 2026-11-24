@@ -1,0 +1,51 @@
+/*
+ * Design tokens do sistema.
+ * Nenhum componente usa cor fixa: tudo vem destas variáveis.
+ * Os valores abaixo são o padrão. A tela Aparência sobrescreve estes valores
+ * em tempo de execução com o que estiver salvo no banco.
+ */
+:root {
+  /* Marca */
+  --color-primary: #1f4070;
+  --color-primary-hover: #1f3f6e;
+  --color-primary-contrast: #ffffff;
+  --color-sidebar: #122440;
+  --color-sidebar-text: #e6ebf2;
+  --color-muted: #5b6d88;
+  --color-border: #acb4bf;
+
+  /* Superfícies */
+  --color-background: #f3f5f8;
+  --color-surface: #ffffff;
+  --color-text: #16202e;
+  --color-bubble-in: #ffffff;
+  --color-bubble-out: #dfe8f5;
+
+  /* Estados */
+  --color-success: #1f7a4d;
+  --color-warning: #a15c00;
+  --color-danger: #b42318;
+
+  /* Componentes e modais */
+  --radius: 10px;
+  --modal-overlay: rgb(18 36 64 / 0.55);
+  --modal-shadow: 0 20px 45px rgb(18 36 64 / 0.25);
+  --modal-width-sm: 420px;
+  --modal-width-md: 560px;
+  --modal-width-lg: 760px;
+  --font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+}
+
+:root[data-theme='dark'] {
+  --color-primary: #3f6fb5;
+  --color-primary-hover: #5583c4;
+  --color-background: #0d1626;
+  --color-surface: #16233a;
+  --color-text: #e6ebf2;
+  --color-muted: #9aa8bd;
+  --color-border: #2b3b55;
+  --color-bubble-in: #1c2b45;
+  --color-bubble-out: #23406b;
+  --modal-overlay: rgb(0 0 0 / 0.6);
+}

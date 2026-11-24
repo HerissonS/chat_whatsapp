@@ -1,0 +1,10 @@
+# syntax=docker/dockerfile:1
+# Central de Atendimento - backup diário do MariaDB (sistema) e do PostgreSQL (Evolution).
+# Base: postgres alpine (traz o pg_dump na mesma versão do servidor) + cliente MariaDB.
+ARG PG_IMAGE=postgres:18.7-alpine@sha256:ff64c9e3bdf8e2120107d3559de8db314e8305f7e38c5105903c6295876738ff
+FROM ${PG_IMAGE}
+# Correções de segurança do Alpine + cliente MariaDB. O gosu não é usado (o container roda com usuário fixo).
+RUN apk upgrade --no-cache && apk add --no-cache mariadb-client tzdata && rm -f /usr/local/bin/gosu
+COPY --chmod=0755 backup.sh /usr/local/bin/backup.sh
+ENTRYPOINT ["/usr/local/bin/backup.sh"]
+CMD ["loop"]

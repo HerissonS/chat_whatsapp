@@ -1,0 +1,16 @@
+# Bloqueia tudo e libera só o que o build do backend usa (o que não está aqui não entra na imagem).
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.build.json
+!entrypoint.sh
+!src/
+!test/
+!assets/
+# Mesmo dentro das pastas liberadas, nunca enviar:
+**/node_modules
+**/dist
+**/*.log
+**/.env
+**/.env.*

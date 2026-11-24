@@ -1,0 +1,64 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* Expõe os tokens como utilitários do Tailwind (ex.: bg-primary, text-muted, rounded-app). */
+@theme inline {
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-contrast: var(--color-primary-contrast);
+  --color-sidebar: var(--color-sidebar);
+  --color-sidebar-text: var(--color-sidebar-text);
+  --color-muted: var(--color-muted);
+  --color-border: var(--color-border);
+  --color-background: var(--color-background);
+  --color-surface: var(--color-surface);
+  --color-text: var(--color-text);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+  --color-bubble-in: var(--color-bubble-in);
+  --color-bubble-out: var(--color-bubble-out);
+  --radius-app: var(--radius);
+  --font-sans: var(--font-family);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Fundo da área de mensagens: textura sutil derivada da cor de borda (acompanha o tema). */
+.chat-bg {
+  background-color: var(--color-background);
+  background-image: radial-gradient(color-mix(in oklab, var(--color-border) 35%, transparent) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-primary) 25%, transparent);
+}
+
+/* Barras de rolagem discretas. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-muted) 40%, transparent) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

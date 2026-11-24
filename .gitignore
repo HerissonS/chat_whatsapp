@@ -1,0 +1,49 @@
+# =============================================================================
+# O que NUNCA vai para o repositório
+# =============================================================================
+
+# --- Segredos e configuração local --------------------------------------------
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+# Ajustes locais do compose (podem ter IPs, portas ou senhas do servidor)
+docker-compose.override.yml
+compose.override.yml
+
+# --- Dados (conversas e dados pessoais: LGPD) ---------------------------------
+backups/
+*.sql
+*.sql.gz
+*.dump
+*.bak
+
+# --- Dependências e builds -----------------------------------------------------
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.npm/
+.cache/
+
+# --- Logs ----------------------------------------------------------------------
+*.log
+npm-debug.log*
+
+# --- Editores e sistema operacional -------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Ferramentas locais ---------------------------------------------------------
+.claude/

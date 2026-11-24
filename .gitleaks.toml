@@ -1,0 +1,14 @@
+# Configuração do Gitleaks para a Central de Atendimento: regras padrão, ignorando arquivos locais
+# que nunca são versionados (.env com os segredos reais, dependências e backups).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Arquivos locais e não versionados"
+paths = [
+  '''(^|/)\.env$''',
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+  '''(^|/)backups/''',
+  '''package-lock\.json$''',
+]

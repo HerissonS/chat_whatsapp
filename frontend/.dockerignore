@@ -1,0 +1,15 @@
+# Bloqueia tudo e libera só o que o build do frontend usa.
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!vite.config.ts
+!index.html
+!src/
+!nginx/
+# Mesmo dentro das pastas liberadas, nunca enviar:
+**/node_modules
+**/dist
+**/*.log
+**/.env
+**/.env.*

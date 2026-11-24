@@ -116,8 +116,7 @@ docker compose start evolution
 
 ## Atualizar imagens
 
-A Evolution usa uma imagem derivada (`evolution/Dockerfile`) que aplica as correções de segurança do Alpine sobre a imagem oficial. Para mudar a versão da Evolution, troque a tag nesse arquivo.
-
+A Evolution API e os bancos são referenciados diretamente pelas imagens oficiais fixadas por digest `@sha256` em `docker-compose.yml` e `docker-compose.prod.yml`. Para mudar a versão da Evolution, troque a tag nesses arquivos e atualize o digest:
 
 ```sh
 scripts/update-digests.sh --check   # mostra se há digest novo para as versões fixadas
@@ -125,7 +124,12 @@ scripts/update-digests.sh           # aplica
 docker compose build && docker compose up -d
 ```
 
-Para mudar de versão (ex.: nova versão da Evolution), edite a tag no `docker-compose.yml` ou no `Dockerfile` e rode o script para buscar o digest correspondente.
+Em produção com imagens assinadas do GHCR (`docker-compose.prod.yml`), execute `scripts/deploy.sh --prod` ou atualize `BACKEND_IMAGE`, `FRONTEND_IMAGE` e `BACKUP_IMAGE` no `.env` com as referências imutáveis publicadas pela pipeline na `main`, valide com `cosign verify` e aplique com:
+
+```sh
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
 
 ## Atualizar o sistema
 

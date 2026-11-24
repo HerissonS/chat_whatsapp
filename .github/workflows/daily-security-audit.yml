@@ -1,0 +1,304 @@
+name: Daily Security & Dependency Audit
+
+on:
+  schedule:
+    # Todos os dias as 06:00 UTC (03:00 America/Sao_Paulo)
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+# Menor privilegio: nenhuma permissao global.
+permissions: {}
+
+concurrency:
+  group: daily-security-audit
+  cancel-in-progress: true
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+  NODE_VERSION: "24"
+
+jobs:
+  # ===========================================================================
+  # 1. Auditoria diaria de dependencias da aplicacao (Trivy FS + npm outdated)
+  # ===========================================================================
+  audit-code-and-deps:
+    name: "1. Audit App Dependencies & CVEs"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Trivy FS + npm audit + npm outdated (backend e frontend)
+        run: |
+          mkdir -p daily-reports
+          for svc in backend frontend; do
+            docker run --rm \
+              -v "${{ github.workspace }}:/repo:ro" \
+              -v "${{ github.workspace }}/daily-reports:/reports" \
+              "${{ env.TRIVY_IMAGE }}" \
+              fs --scanners vuln --format json \
+              --output "/reports/daily-trivy-fs-${svc}.json" \
+              "/repo/${svc}" || true
+
+            (
+              cd "${svc}"
+              npm ci --no-audit --no-fund
+              npm audit --omit=dev --json > "../daily-reports/npm-audit-${svc}.json" || true
+              npm outdated --json > "../daily-reports/npm-outdated-${svc}.json" || true
+            )
+          done
+
+      - name: Publicar artifact da auditoria de dependencias
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: daily-deps-reports
+          path: daily-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ===========================================================================
+  # 2. Auditoria diaria de digests (@sha256) e imagens (GHCR + terceiros)
+  # ===========================================================================
+  audit-images-and-digests:
+    name: "2. Audit Base Digests & Container Images"
+    needs: audit-code-and-deps
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Login read-only no GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verificar se ha novos digests (@sha256) nas imagens fixadas
+        run: |
+          mkdir -p daily-reports
+          node -e '
+            const fs = require("fs");
+            const { execFileSync } = require("child_process");
+            const files = [
+              "docker-compose.yml",
+              "docker-compose.prod.yml",
+              "backend/Dockerfile",
+              "frontend/Dockerfile",
+              "backup/Dockerfile",
+              "scripts/security-scan.sh",
+            ].filter((f) => fs.existsSync(f));
+
+            const refs = new Set();
+            const re = /[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}/g;
+            for (const f of files) {
+              const content = fs.readFileSync(f, "utf8");
+              for (const m of content.match(re) || []) refs.add(m);
+            }
+
+            const results = [];
+            for (const ref of [...refs].sort()) {
+              const [imageTag, currentDigest] = ref.split("@");
+              let latestDigest = "";
+              let error = false;
+              try {
+                const out = execFileSync("docker", ["buildx", "imagetools", "inspect", imageTag], {
+                  encoding: "utf8",
+                  stdio: ["ignore", "pipe", "pipe"],
+                });
+                const match = out.match(/^Digest:\s*(sha256:[a-f0-9]{64})/m);
+                if (match) latestDigest = match[1];
+                else error = true;
+              } catch {
+                error = true;
+              }
+              results.push({
+                imageTag,
+                currentDigest,
+                latestDigest,
+                outdated: !error && latestDigest !== "" && latestDigest !== currentDigest,
+                error,
+              });
+            }
+            fs.writeFileSync("daily-reports/digests-check.json", JSON.stringify(results, null, 2));
+          '
+
+      - name: Escanear imagens de terceiros e ultimas imagens proprias no GHCR
+        run: |
+          REPO_LOWER="$(printf '%s' "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          # Imagens proprias no GHCR (tenta tag sha-<head>; ignora graciosamente se ainda nao publicada)
+          for svc in backend frontend backup; do
+            img="ghcr.io/${REPO_LOWER}-${svc}:sha-${SHORT_SHA}"
+            if docker buildx imagetools inspect "${img}" >/dev/null 2>&1; then
+              docker run --rm \
+                -v "${{ github.workspace }}/daily-reports:/reports" \
+                -v "${HOME}/.docker/config.json:/root/.docker/config.json:ro" \
+                "${{ env.TRIVY_IMAGE }}" \
+                image --format json \
+                --output "/reports/daily-trivy-image-ghcr-${svc}.json" \
+                "${img}" || true
+            else
+              echo "Imagem ${img} ainda nao publicada no GHCR; ignorando scan GHCR."
+            fi
+          done
+
+          # Imagens oficiais de terceiros fixadas no docker-compose.yml
+          scan_third_party() {
+            local name="$1"
+            local pattern="$2"
+            local ref
+            ref="$(grep -oE "${pattern}[^[:space:]]+@sha256:[a-f0-9]{64}" docker-compose.yml | head -n 1 || true)"
+            if [ -n "${ref}" ]; then
+              docker run --rm \
+                -v "${{ github.workspace }}/daily-reports:/reports" \
+                "${{ env.TRIVY_IMAGE }}" \
+                image --format json \
+                --output "/reports/daily-trivy-image-${name}.json" \
+                "${ref}" || true
+            fi
+          }
+
+          scan_third_party mariadb "mariadb:"
+          scan_third_party postgres "postgres:"
+          scan_third_party redis "redis:"
+          scan_third_party evolution "evoapicloud/evolution-api:"
+
+      - name: Publicar artifact da auditoria de imagens e digests
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: daily-images-reports
+          path: daily-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ===========================================================================
+  # 3. Relatorio Diario no Summary + Issue Consolidada (label: security-audit)
+  # ===========================================================================
+  publish-daily-report:
+    name: "3. Daily Report & Recommendations"
+    needs:
+      - audit-code-and-deps
+      - audit-images-and-digests
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Baixar artifacts da auditoria diaria
+        continue-on-error: true
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          pattern: daily-*
+          path: daily-artifacts
+
+      - name: Gerar relatorio diario e avaliar necessidade de alerta
+        id: report
+        env:
+          ARTIFACTS_DIR: daily-artifacts
+          OUTPUT_ISSUE_BODY: daily-issue.md
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node .github/scripts/generate-daily-report.mjs
+
+      - name: Criar, atualizar ou fechar Issue consolidada (security-audit)
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          NEEDS_ISSUE: ${{ steps.report.outputs.needs_issue }}
+        with:
+          script: |
+            const fs = require('fs');
+            const label = 'security-audit';
+            const title = '🛡️ Auditoria Diária de Segurança: atualizações recomendadas';
+            const body = fs.readFileSync('daily-issue.md', 'utf8');
+            const needsIssue = process.env.NEEDS_ISSUE === 'true';
+
+            // Garante que a label exista
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+              });
+            } catch {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+                color: 'd93f0b',
+                description: 'Alertas da pipeline diaria de auditoria de seguranca',
+              });
+            }
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+              per_page: 10,
+            });
+            const existing = openIssues.find((i) => !i.pull_request);
+
+            if (needsIssue) {
+              if (existing) {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existing.number,
+                  title,
+                  body,
+                });
+              } else {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title,
+                  body,
+                  labels: [label],
+                });
+              }
+            } else if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: '✅ Auditoria diária concluída sem vulnerabilidades HIGH/CRITICAL corrigíveis em componentes próprios e com todos os digests atualizados. Fechando issue automaticamente.',
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'closed',
+              });
+            }

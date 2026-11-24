@@ -1,0 +1,695 @@
+name: DevSecOps Pipeline (CI/CD & Supply Chain)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Menor privilegio: nenhuma permissao global; cada job declara apenas o estritamente necessario.
+permissions: {}
+
+concurrency:
+  group: devsecops-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+  GITLEAKS_IMAGE: zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+  HADOLINT_IMAGE: ghcr.io/hadolint/hadolint:v2.12.0-alpine
+  SEMGREP_IMAGE: semgrep/semgrep:latest
+  NODE_VERSION: "24"
+  DOCKER_BUILD_SUMMARY: "false"
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+
+jobs:
+  # ===========================================================================
+  # ESTAGIO 1: Deteccao de Segredos (Gitleaks) + Build & Testes Unitarios
+  # ===========================================================================
+  secrets-and-tests:
+    name: "1. Secrets & Unit Tests"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Executar Gitleaks (deteccao de segredos)
+        run: |
+          mkdir -p reports
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo:ro" \
+            -v "${{ github.workspace }}/reports:/reports" \
+            "${{ env.GITLEAKS_IMAGE }}" \
+            dir /repo --no-banner --redact \
+            --config /repo/.gitleaks.toml \
+            --report-format json \
+            --report-path /reports/gitleaks-report.json \
+            --exit-code 0
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Build e testes unitarios do backend
+        working-directory: backend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          npm run build
+          npm test
+
+      - name: Build e typecheck do frontend
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Publicar artifact do Gitleaks
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: report-stage1-secrets
+          path: reports/gitleaks-report.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Gate - bloquear se Gitleaks encontrar segredos
+        run: |
+          node -e '
+            const fs = require("fs");
+            const data = JSON.parse(fs.readFileSync("reports/gitleaks-report.json", "utf8") || "[]");
+            if (Array.isArray(data) && data.length > 0) {
+              console.error(`Gitleaks encontrou ${data.length} segredo(s).`);
+              process.exit(1);
+            }
+            console.log("Gitleaks: nenhum segredo encontrado.");
+          '
+
+  # ===========================================================================
+  # ESTAGIO 2: SAST - Analise Estatica de Codigo (Semgrep)
+  # ===========================================================================
+  sast-semgrep:
+    name: "2. SAST (Semgrep)"
+    needs: secrets-and-tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Executar Semgrep SAST
+        run: |
+          mkdir -p reports
+          docker run --rm \
+            -v "${{ github.workspace }}:/src:ro" \
+            -v "${{ github.workspace }}/reports:/reports" \
+            -w /src \
+            "${{ env.SEMGREP_IMAGE }}" \
+            semgrep scan \
+              --config p/owasp-top-ten \
+              --config p/typescript \
+              --config p/nodejs \
+              --config p/react \
+              --config p/dockerfile \
+              --config p/nginx \
+              --exclude node_modules \
+              --exclude dist \
+              --exclude backups \
+              --metrics=off \
+              --json \
+              --output /reports/semgrep-report.json \
+              /src || true
+
+      - name: Publicar artifact do Semgrep
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: report-stage2-sast
+          path: reports/semgrep-report.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Gate - bloquear em achados Semgrep de severidade ERROR
+        run: |
+          node -e '
+            const fs = require("fs");
+            if (!fs.existsSync("reports/semgrep-report.json")) {
+              console.error("Semgrep nao gerou reports/semgrep-report.json.");
+              process.exit(1);
+            }
+            const report = JSON.parse(fs.readFileSync("reports/semgrep-report.json", "utf8"));
+            const errors = (report.results || []).filter(r => (r.extra?.severity || "").toUpperCase() === "ERROR");
+            console.log(`Semgrep concluido: ${(report.results || []).length} achado(s) total, ${errors.length} ERROR.`);
+            if (errors.length > 0) {
+              for (const e of errors.slice(0, 15)) {
+                console.error(`ERROR [${e.check_id}] ${e.path}:${e.start?.line} - ${e.extra?.message}`);
+              }
+              process.exit(1);
+            }
+          '
+
+  # ===========================================================================
+  # ESTAGIO 3: SCA & SBOM CycloneDX (Trivy FS + CycloneDX)
+  # ===========================================================================
+  sca-and-sbom:
+    name: "3. SCA & SBOM (Trivy + CycloneDX)"
+    needs: sast-semgrep
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Executar Trivy FS (SCA + Secrets) e gerar SBOM CycloneDX
+        run: |
+          mkdir -p reports
+          for svc in backend frontend; do
+            docker run --rm \
+              -v "${{ github.workspace }}:/repo:ro" \
+              -v "${{ github.workspace }}/reports:/reports" \
+              "${{ env.TRIVY_IMAGE }}" \
+              fs --scanners vuln,secret --format json \
+              --output "/reports/trivy-fs-${svc}.json" \
+              "/repo/${svc}"
+
+            docker run --rm \
+              -v "${{ github.workspace }}:/repo:ro" \
+              -v "${{ github.workspace }}/reports:/reports" \
+              "${{ env.TRIVY_IMAGE }}" \
+              fs --format cyclonedx \
+              --output "/reports/sbom-${svc}.cdx.json" \
+              "/repo/${svc}"
+          done
+
+      - name: Publicar artifacts SCA e SBOMs CycloneDX
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: report-stage3-sca-sbom
+          path: |
+            reports/trivy-fs-backend.json
+            reports/trivy-fs-frontend.json
+            reports/sbom-backend.cdx.json
+            reports/sbom-frontend.cdx.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Gate - bloquear em CVEs HIGH/CRITICAL corrigiveis ou secrets no SCA
+        run: |
+          node -e '
+            const fs = require("fs");
+            let fail = 0;
+            for (const svc of ["backend", "frontend"]) {
+              const r = JSON.parse(fs.readFileSync(`reports/trivy-fs-${svc}.json`, "utf8"));
+              for (const res of r.Results || []) {
+                for (const v of res.Vulnerabilities || []) {
+                  const sev = (v.Severity || "").toUpperCase();
+                  if ((sev === "HIGH" || sev === "CRITICAL") && v.FixedVersion) {
+                    console.error(`[${svc}] ${sev} ${v.VulnerabilityID} em ${v.PkgName}@${v.InstalledVersion} -> corrigido em ${v.FixedVersion}`);
+                    fail++;
+                  }
+                }
+                for (const s of res.Secrets || []) {
+                  console.error(`[${svc}] Secret detectado: ${s.RuleID} em ${res.Target}`);
+                  fail++;
+                }
+              }
+            }
+            if (fail > 0) process.exit(1);
+            console.log("SCA aprovado: 0 CVEs HIGH/CRITICAL corrigiveis e 0 segredos.");
+          '
+
+  # ===========================================================================
+  # ESTAGIO 4: Misconfiguration & Dockerfile Lint (Trivy Config + Hadolint)
+  # ===========================================================================
+  misconfig-scan:
+    name: "4. Misconfiguration (Trivy Config + Hadolint)"
+    needs: sca-and-sbom
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Executar Trivy Config (Dockerfiles, Compose e Nginx)
+        run: |
+          mkdir -p reports
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo:ro" \
+            -v "${{ github.workspace }}/reports:/reports" \
+            "${{ env.TRIVY_IMAGE }}" \
+            config --format json \
+            --output /reports/trivy-config.json \
+            /repo
+
+      - name: Executar Hadolint nos 3 Dockerfiles proprios
+        run: |
+          for svc in backend frontend backup; do
+            docker run --rm -i "${{ env.HADOLINT_IMAGE }}" \
+              hadolint --format json - < "${svc}/Dockerfile" > "reports/hadolint-${svc}.json" || true
+          done
+
+      - name: Publicar artifacts de Misconfiguration e Hadolint
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: report-stage4-misconfig
+          path: |
+            reports/trivy-config.json
+            reports/hadolint-backend.json
+            reports/hadolint-frontend.json
+            reports/hadolint-backup.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Gate - bloquear em Misconfigurations HIGH/CRITICAL ou Hadolint error
+        run: |
+          node -e '
+            const fs = require("fs");
+            let fail = 0;
+            const cfg = JSON.parse(fs.readFileSync("reports/trivy-config.json", "utf8"));
+            for (const res of cfg.Results || []) {
+              for (const m of res.Misconfigurations || []) {
+                if (m.Status && m.Status !== "FAIL") continue;
+                const sev = (m.Severity || "").toUpperCase();
+                if (sev === "HIGH" || sev === "CRITICAL") {
+                  console.error(`[Trivy Config] ${sev} ${m.ID} em ${res.Target}: ${m.Title}`);
+                  fail++;
+                }
+              }
+            }
+            for (const svc of ["backend", "frontend", "backup"]) {
+              const items = JSON.parse(fs.readFileSync(`reports/hadolint-${svc}.json`, "utf8") || "[]");
+              for (const f of items) {
+                if ((f.level || "").toLowerCase() === "error") {
+                  console.error(`[Hadolint ${svc}] ${f.code} linha ${f.line}: ${f.message}`);
+                  fail++;
+                }
+              }
+            }
+            if (fail > 0) process.exit(1);
+            console.log("Misconfiguration & Hadolint aprovados.");
+          '
+
+  # ===========================================================================
+  # ESTAGIO 5: Build Local & Scan das 3 Imagens Docker (Trivy Image + SBOM)
+  # ===========================================================================
+  image-build-scan:
+    name: "5. Image Build & Scan (Trivy Image)"
+    needs: misconfig-scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Build local da imagem backend (sem push)
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        with:
+          context: ./backend
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: local-scan/backend:ci
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build local da imagem frontend (sem push)
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        with:
+          context: ./frontend
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: local-scan/frontend:ci
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Build local da imagem backup (sem push)
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        with:
+          context: ./backup
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: local-scan/backup:ci
+          cache-from: type=gha,scope=backup
+          cache-to: type=gha,mode=max,scope=backup
+
+      - name: Escanear as 3 imagens com Trivy e gerar SBOM CycloneDX por imagem
+        run: |
+          mkdir -p reports
+          for svc in backend frontend backup; do
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock:ro \
+              -v "${{ github.workspace }}/reports:/reports" \
+              "${{ env.TRIVY_IMAGE }}" \
+              image --format json \
+              --output "/reports/trivy-image-${svc}.json" \
+              "local-scan/${svc}:ci"
+
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock:ro \
+              -v "${{ github.workspace }}/reports:/reports" \
+              "${{ env.TRIVY_IMAGE }}" \
+              image --format cyclonedx \
+              --output "/reports/sbom-image-${svc}.cdx.json" \
+              "local-scan/${svc}:ci"
+          done
+
+      - name: Publicar artifacts Trivy Image e SBOMs de imagem
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: report-stage5-images
+          path: |
+            reports/trivy-image-backend.json
+            reports/trivy-image-frontend.json
+            reports/trivy-image-backup.json
+            reports/sbom-image-backend.cdx.json
+            reports/sbom-image-frontend.cdx.json
+            reports/sbom-image-backup.cdx.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Gate - bloquear em CVEs HIGH/CRITICAL corrigiveis nas imagens
+        run: |
+          node -e '
+            const fs = require("fs");
+            let fail = 0;
+            for (const svc of ["backend", "frontend", "backup"]) {
+              const r = JSON.parse(fs.readFileSync(`reports/trivy-image-${svc}.json`, "utf8"));
+              for (const res of r.Results || []) {
+                for (const v of res.Vulnerabilities || []) {
+                  const sev = (v.Severity || "").toUpperCase();
+                  if ((sev === "HIGH" || sev === "CRITICAL") && v.FixedVersion) {
+                    console.error(`[IMG ${svc}] ${sev} ${v.VulnerabilityID} em ${v.PkgName}@${v.InstalledVersion} -> corrigido em ${v.FixedVersion}`);
+                    fail++;
+                  }
+                }
+              }
+            }
+            if (fail > 0) process.exit(1);
+            console.log("Trivy Image aprovado: 0 CVEs HIGH/CRITICAL corrigiveis nas 3 imagens.");
+          '
+
+  # ===========================================================================
+  # ESTAGIO 6: Publicacao Multi-Arch no GHCR & Assinatura Digital Cosign
+  # Executado SOMENTE apos merge na main e aprovacao de todos os gates anteriores
+  # ===========================================================================
+  publish-and-sign:
+    name: "6. Publish Multi-Arch (GHCR) & Cosign Sign"
+    needs: image-build-scan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Baixar SBOMs CycloneDX gerados no Estagio 5
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          name: report-stage5-images
+          path: sboms
+
+      - name: Definir metadados de versao e repositorio em minusculas
+        id: vars
+        run: |
+          REPO_LOWER="$(printf '%s' "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          APP_VER="$(node -p "require('./backend/package.json').version")"
+          echo "repo_lower=${REPO_LOWER}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "app_version=${APP_VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Configurar QEMU (emulacao multi-arch)
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Login no GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Instalar Sigstore Cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      # --- BACKEND ---
+      - name: Metadados OCI - backend
+        id: meta_backend
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ghcr.io/${{ steps.vars.outputs.repo_lower }}-backend
+          tags: |
+            type=raw,value=sha-${{ steps.vars.outputs.short_sha }}
+            type=raw,value=${{ steps.vars.outputs.app_version }}-sha-${{ steps.vars.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build e Push Multi-Arch - backend
+        id: push_backend
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        with:
+          context: ./backend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta_backend.outputs.tags }}
+          labels: ${{ steps.meta_backend.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      # --- FRONTEND ---
+      - name: Metadados OCI - frontend
+        id: meta_frontend
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ghcr.io/${{ steps.vars.outputs.repo_lower }}-frontend
+          tags: |
+            type=raw,value=sha-${{ steps.vars.outputs.short_sha }}
+            type=raw,value=${{ steps.vars.outputs.app_version }}-sha-${{ steps.vars.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build e Push Multi-Arch - frontend
+        id: push_frontend
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        with:
+          context: ./frontend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta_frontend.outputs.tags }}
+          labels: ${{ steps.meta_frontend.outputs.labels }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      # --- BACKUP ---
+      - name: Metadados OCI - backup
+        id: meta_backup
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ghcr.io/${{ steps.vars.outputs.repo_lower }}-backup
+          tags: |
+            type=raw,value=sha-${{ steps.vars.outputs.short_sha }}
+            type=raw,value=${{ steps.vars.outputs.app_version }}-sha-${{ steps.vars.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build e Push Multi-Arch - backup
+        id: push_backup
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        with:
+          context: ./backup
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta_backup.outputs.tags }}
+          labels: ${{ steps.meta_backup.outputs.labels }}
+          cache-from: type=gha,scope=backup
+          cache-to: type=gha,mode=max,scope=backup
+
+      # --- ASSINATURA COSIGN KEYLESS + ATESTACAO SBOM + VERIFICACAO ---
+      - name: Assinar imagens com Cosign (keyless OIDC), atestar SBOM e verificar
+        env:
+          REPO_LOWER: ${{ steps.vars.outputs.repo_lower }}
+          SHORT_SHA: ${{ steps.vars.outputs.short_sha }}
+          APP_VERSION: ${{ steps.vars.outputs.app_version }}
+          DIGEST_BACKEND: ${{ steps.push_backend.outputs.digest }}
+          DIGEST_FRONTEND: ${{ steps.push_frontend.outputs.digest }}
+          DIGEST_BACKUP: ${{ steps.push_backup.outputs.digest }}
+        run: |
+          mkdir -p reports
+          IDENTITY_REGEX="^https://github\.com/${{ github.repository }}/\.github/workflows/devsecops-pipeline\.yml@refs/heads/main$"
+
+          sign_and_verify() {
+            local svc="$1"
+            local digest="$2"
+            local img="ghcr.io/${REPO_LOWER}-${svc}"
+            local ref="${img}@${digest}"
+
+            echo "== Assinando ${ref}"
+            cosign sign --yes "${ref}"
+
+            echo "== Atestando SBOM CycloneDX em ${ref}"
+            cosign attest --yes \
+              --predicate "sboms/sbom-image-${svc}.cdx.json" \
+              --type cyclonedx \
+              "${ref}"
+
+            echo "== Verificando assinatura ${ref}"
+            cosign verify \
+              --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+              --certificate-identity-regexp="${IDENTITY_REGEX}" \
+              "${ref}" > /dev/null
+          }
+
+          sign_and_verify backend "${DIGEST_BACKEND}"
+          sign_and_verify frontend "${DIGEST_FRONTEND}"
+          sign_and_verify backup "${DIGEST_BACKUP}"
+
+          node -e '
+            const fs = require("fs");
+            const out = [
+              { service: "backend", digest: process.env.DIGEST_BACKEND },
+              { service: "frontend", digest: process.env.DIGEST_FRONTEND },
+              { service: "backup", digest: process.env.DIGEST_BACKUP },
+            ].map((item) => ({
+              service: item.service,
+              image: `ghcr.io/${process.env.REPO_LOWER}-${item.service}`,
+              shaTag: `sha-${process.env.SHORT_SHA}`,
+              versionTag: `${process.env.APP_VERSION}-sha-${process.env.SHORT_SHA}`,
+              digest: item.digest,
+              cosignVerified: true,
+              sbomAttested: true,
+            }));
+            fs.writeFileSync("reports/published-images.json", JSON.stringify(out, null, 2));
+          '
+
+      - name: Publicar artifact com digests assinados
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: report-stage6-published
+          path: reports/published-images.json
+          if-no-files-found: ignore
+          retention-days: 90
+
+  # ===========================================================================
+  # ESTAGIO 7: Relatorio Consolidado no GitHub Actions Summary (+ PR Comment)
+  # Sem upload SARIF (100% compativel com conta gratuita)
+  # ===========================================================================
+  security-report:
+    name: "7. Relatório de Segurança"
+    needs:
+      - secrets-and-tests
+      - sast-semgrep
+      - sca-and-sbom
+      - misconfig-scan
+      - image-build-scan
+      - publish-and-sign
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Baixar artifacts dos relatórios de segurança
+        continue-on-error: true
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          pattern: report-stage*
+          path: all-artifacts
+
+      - name: Gerar relatório consolidado em português para o GitHub Summary
+        env:
+          ARTIFACTS_DIR: all-artifacts
+          OUTPUT_PR_COMMENT: pr-comment.md
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_SHA: ${{ github.sha }}
+          GIT_REF: ${{ github.ref_name }}
+          REPO_FULL_NAME: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS_SECRETS: ${{ needs.secrets-and-tests.result }}
+          JOB_STATUS_SAST: ${{ needs.sast-semgrep.result }}
+          JOB_STATUS_SCA: ${{ needs.sca-and-sbom.result }}
+          JOB_STATUS_MISCONFIG: ${{ needs.misconfig-scan.result }}
+          JOB_STATUS_IMAGES: ${{ needs.image-build-scan.result }}
+          JOB_STATUS_PUBLISH: ${{ needs.publish-and-sign.result }}
+        run: node .github/scripts/generate-security-report.mjs
+
+      - name: Publicar ou atualizar comentario consolidado no PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('pr-comment.md', 'utf8');
+            const marker = '<!-- devsecops-security-report -->';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

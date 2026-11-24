@@ -41,6 +41,9 @@ const ACTION_LABELS: Record<string, string> = {
   'admin.whatsapp.restart': 'Reiniciou o WhatsApp',
   'admin.branding.updated': 'Alterou a aparência',
   'admin.bot.updated': 'Alterou bot e menu',
+  'admin.department.created': 'Criou caixa de entrada',
+  'admin.department.updated': 'Alterou caixa de entrada',
+  'admin.department.deleted': 'Removeu caixa de entrada',
 };
 
 export function AuditAdmin() {

@@ -438,7 +438,7 @@ jobs:
           persist-credentials: false
 
       - name: Baixar SBOMs CycloneDX gerados no Estagio 5
-        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: report-stage5-images
           path: sboms
@@ -641,7 +641,7 @@ jobs:
 
       - name: Baixar artifacts dos relatórios de segurança
         continue-on-error: true
-        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: report-stage*
           path: all-artifacts

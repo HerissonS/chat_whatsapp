@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -18,7 +19,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { z } from 'zod';
 import { AuditService } from '../audit/audit.service.js';
 import { type AuthUser, clientIp, CurrentUser, RequirePermission } from '../common/auth-user.js';
-import { idParam, parse } from '../common/validation.js';
+import { idParam, parse, toBool } from '../common/validation.js';
 import { assertInboxAccess } from '../admin/inbox-access.js';
 import { APP_CONFIG, type AppConfig } from '../config/env.js';
 import { DB } from '../database/database.module.js';
@@ -126,6 +127,9 @@ export class WhatsappController {
   @RequirePermission('admin.whatsapp')
   async connect(@CurrentUser() user: AuthUser, @Param('departmentId') idRaw: string, @Body() body: unknown, @Req() req: Request) {
     const d = await this.dept(parse(idParam, idRaw), user);
+    if (!toBool(d.active)) {
+      throw new BadRequestException('Reative a caixa de entrada antes de conectar o WhatsApp.');
+    }
     const { number } = parse(connectSchema, body ?? {});
     try {
       if (!(await this.evolution.instanceExists(d.evolution_instance))) {

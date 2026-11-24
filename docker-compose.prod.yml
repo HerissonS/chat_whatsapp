@@ -1,0 +1,376 @@
+# Central de Atendimento WhatsApp - stack de producao com imagens assinadas no GHCR.
+# - Imagens proprias (backend/worker, frontend, backup): consumidas do GHCR por SHA/digest imutavel.
+# - Imagens de terceiros (mariadb, postgres, redis, evolution): oficiais fixadas por digest (@sha256).
+# - Sem blocos build: em producao basta executar `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d`.
+# - Antes de subir em producao, verifique as assinaturas com `cosign verify` (ver SECURITY.md).
+name: chat-whatsapp
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-hardening: &hardening
+  restart: unless-stopped
+  logging: *logging
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  # ---------------------------------------------------------------------------
+  # Banco do sistema (MariaDB oficial; nao existe variante Alpine oficial)
+  # ---------------------------------------------------------------------------
+  mariadb:
+    <<: *hardening
+    image: mariadb:12.3.3@sha256:4ebbcf100a3ba320766dfa0e1af008df12261301db6ef72798c7650f70794aed
+    container_name: chat_wpp_mariadb
+    user: mysql
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/mysqld
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?defina no .env}
+      MARIADB_DATABASE: ${DB_NAME:-chat_whatsapp}
+      MARIADB_USER: ${DB_USER:-chat_app}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?defina no .env}
+      MARIADB_AUTO_UPGRADE: "1"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+00:00
+      - --skip-name-resolve
+      - --max-connections=200
+      - --innodb-buffer-pool-size=256M
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - chat_internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 768M }
+
+  # ---------------------------------------------------------------------------
+  # Banco exclusivo da Evolution API
+  # ---------------------------------------------------------------------------
+  evolution_db:
+    <<: *hardening
+    image: postgres:18.7-alpine@sha256:ff64c9e3bdf8e2120107d3559de8db314e8305f7e38c5105903c6295876738ff
+    container_name: chat_wpp_evolution_db
+    user: postgres
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+      POSTGRES_DB: ${EVO_DB_NAME:-evolution}
+      POSTGRES_USER: ${EVO_DB_USER:-evolution}
+      POSTGRES_PASSWORD: ${EVO_DB_PASSWORD:?defina no .env}
+    volumes:
+      - evolution_pgdata:/var/lib/postgresql
+    networks:
+      - chat_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+  # ---------------------------------------------------------------------------
+  # Redis: sessoes, filas (BullMQ), Socket.IO e cache da Evolution
+  # ---------------------------------------------------------------------------
+  redis:
+    <<: *hardening
+    image: redis:8.10.3-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
+    container_name: chat_wpp_redis
+    user: redis
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?defina no .env}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        printf 'requirepass %s\nappendonly yes\ndir /data\nprotected-mode yes\nrename-command FLUSHALL ""\nrename-command CONFIG ""\n' "$$REDIS_PASSWORD"
+        | exec redis-server -
+    volumes:
+      - redis_data:/data
+    networks:
+      - chat_internal
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+  # ---------------------------------------------------------------------------
+  # Evolution API (conexao com o WhatsApp). Imagem oficial fixada por digest.
+  # ---------------------------------------------------------------------------
+  evolution:
+    <<: *hardening
+    image: evoapicloud/evolution-api:v2.3.7@sha256:1bd8afc4a6cf48822e6cf02469aeae7bd35a12a6b616eacd1291926307f4d339
+    container_name: chat_wpp_evolution
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+      SERVER_TYPE: http
+      SERVER_PORT: "8080"
+      SERVER_URL: http://evolution:8080
+      TELEMETRY: "false"
+      LANGUAGE: pt-BR
+      CORS_ORIGIN: "*"
+      CORS_METHODS: GET,POST,PUT,DELETE
+      CORS_CREDENTIALS: "true"
+      LOG_LEVEL: ERROR,WARN,INFO
+      LOG_COLOR: "false"
+      LOG_BAILEYS: error
+      DEL_INSTANCE: "false"
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${EVO_DB_USER:-evolution}:${EVO_DB_PASSWORD}@evolution_db:5432/${EVO_DB_NAME:-evolution}?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: chat_whatsapp
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://:${REDIS_PASSWORD}@redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?defina no .env}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      CONFIG_SESSION_PHONE_CLIENT: Central de Atendimento
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      QRCODE_LIMIT: "30"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      WEBSOCKET_ENABLED: "false"
+      RABBITMQ_ENABLED: "false"
+      SQS_ENABLED: "false"
+      S3_ENABLED: "false"
+      CHATWOOT_ENABLED: "false"
+      OPENAI_ENABLED: "false"
+      DIFY_ENABLED: "false"
+    volumes:
+      - evolution_instances:/evolution/instances
+    networks:
+      - chat_internal
+      - chat_egress
+    depends_on:
+      evolution_db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  # ---------------------------------------------------------------------------
+  # Backend (API + WebSocket + webhook interno) - imagem assinada no GHCR
+  # ---------------------------------------------------------------------------
+  backend:
+    <<: *hardening
+    image: ${BACKEND_IMAGE}
+    container_name: chat_wpp_backend
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    command: ["api"]
+    environment: &backend-env
+      SERVICE_NAME: api
+      NODE_ENV: production
+      PORT: "3000"
+      TZ: ${TZ:-America/Sao_Paulo}
+      APP_TIMEZONE: ${TZ:-America/Sao_Paulo}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TRUST_PROXY: ${TRUST_PROXY:-loopback, 172.16.0.0/12}
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      DB_NAME: ${DB_NAME:-chat_whatsapp}
+      DB_USER: ${DB_USER:-chat_app}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: "0"
+      EVOLUTION_URL: http://evolution:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-principal}
+      WEBHOOK_TOKEN: ${WEBHOOK_TOKEN:?defina no .env}
+      SESSION_SECRET: ${SESSION_SECRET:?defina no .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-}
+      MEDIA_DIR: /data/media
+      MEDIA_MAX_MB: ${MEDIA_MAX_MB:-100}
+      SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-720}
+      SESSION_MAX_HOURS: ${SESSION_MAX_HOURS:-168}
+      LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-5}
+      LOGIN_LOCK_MINUTES: ${LOGIN_LOCK_MINUTES:-15}
+      PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-8}
+      WEBHOOK_RETENTION_DAYS: ${WEBHOOK_RETENTION_DAYS:-30}
+      CATALOG_DB_HOST: ${CATALOG_DB_HOST:-}
+      CATALOG_DB_PORT: ${CATALOG_DB_PORT:-3306}
+      CATALOG_DB_NAME: ${CATALOG_DB_NAME:-}
+      CATALOG_DB_USER: ${CATALOG_DB_USER:-}
+      CATALOG_DB_PASSWORD: ${CATALOG_DB_PASSWORD:-}
+    volumes:
+      - media:/data/media
+    networks:
+      - chat_public
+      - chat_internal
+    depends_on:
+      mariadb: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+  # ---------------------------------------------------------------------------
+  # Worker (filas: eventos do webhook, midia, PDF e e-mail) - mesma imagem do backend
+  # ---------------------------------------------------------------------------
+  worker:
+    <<: *hardening
+    image: ${BACKEND_IMAGE}
+    container_name: chat_wpp_worker
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    command: ["worker"]
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: worker
+    volumes:
+      - media:/data/media
+    networks:
+      - chat_internal
+      - chat_egress
+    depends_on:
+      backend: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "const f=require('fs');try{process.exit(Date.now()-Number(f.readFileSync('/tmp/worker-heartbeat','utf8'))<60000?0:1)}catch{process.exit(1)}"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+  # ---------------------------------------------------------------------------
+  # Frontend (unico servico com porta publicada) - imagem assinada no GHCR
+  # ---------------------------------------------------------------------------
+  frontend:
+    <<: *hardening
+    image: ${FRONTEND_IMAGE}
+    container_name: chat_wpp_frontend
+    read_only: true
+    tmpfs:
+      - /tmp
+    ports:
+      - "${BIND_IP:-127.0.0.1}:${HTTP_PORT:-8870}:8080"
+    networks:
+      - chat_public
+    depends_on:
+      backend: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+  # ---------------------------------------------------------------------------
+  # Backup diario (MariaDB + PostgreSQL da Evolution) - imagem assinada no GHCR
+  # ---------------------------------------------------------------------------
+  backup:
+    <<: *hardening
+    image: ${BACKUP_IMAGE}
+    container_name: chat_wpp_backup
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+      BACKUP_TIME: ${BACKUP_TIME:-02:30}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      DB_HOST: mariadb
+      DB_NAME: ${DB_NAME:-chat_whatsapp}
+      DB_USER: ${DB_USER:-chat_app}
+      DB_PASSWORD: ${DB_PASSWORD}
+      EVO_DB_HOST: evolution_db
+      EVO_DB_NAME: ${EVO_DB_NAME:-evolution}
+      EVO_DB_USER: ${EVO_DB_USER:-evolution}
+      EVO_DB_PASSWORD: ${EVO_DB_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    networks:
+      - chat_internal
+    depends_on:
+      mariadb: { condition: service_healthy }
+      evolution_db: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+networks:
+  chat_public:
+    name: chat-whatsapp_public
+  chat_internal:
+    name: chat-whatsapp_internal
+    internal: true
+  chat_egress:
+    name: chat-whatsapp_egress
+
+volumes:
+  mariadb_data:
+    name: chat-whatsapp_mariadb_data
+  evolution_pgdata:
+    name: chat-whatsapp_evolution_pgdata
+  redis_data:
+    name: chat-whatsapp_redis_data
+  evolution_instances:
+    name: chat-whatsapp_evolution_instances
+  media:
+    name: chat-whatsapp_media

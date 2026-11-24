@@ -23,7 +23,7 @@ for d in backend frontend; do
 done
 
 echo "== 2/3 Trivy (imagens)"
-IMAGES="chat-whatsapp/backend:$VERSION chat-whatsapp/frontend:$VERSION chat-whatsapp/backup:$VERSION chat-whatsapp/evolution:2.3.7"
+IMAGES="chat-whatsapp/backend:$VERSION chat-whatsapp/frontend:$VERSION chat-whatsapp/backup:$VERSION"
 IMAGES="$IMAGES $(grep -hoE 'image: [^ ]+@sha256:[a-f0-9]{64}' docker-compose.yml | awk '{print $2}' | grep -v '^chat-whatsapp/')"
 for img in $IMAGES; do
   echo "-- $img"

@@ -3,6 +3,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   Get,
   Inject,
   NotFoundException,
@@ -13,7 +14,8 @@ import {
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import type { Kysely } from 'kysely';
+import { type Kysely, sql } from 'kysely';
+import { PinoLogger } from 'nestjs-pino';
 import { z } from 'zod';
 import { AuditService } from '../audit/audit.service.js';
 import { type AuthUser, clientIp, CurrentUser, RequirePermission } from '../common/auth-user.js';
@@ -21,6 +23,7 @@ import { cleanText, idParam, parse, toBool } from '../common/validation.js';
 import { assertInboxAccess } from './inbox-access.js';
 import { DB } from '../database/database.module.js';
 import type { Database } from '../database/schema.js';
+import { EvolutionClient } from '../whatsapp/evolution.client.js';
 
 export const BOT_TEMPLATE_KEYS = ['menu_header', 'menu_invalid', 'confirmation', 'closing'] as const;
 
@@ -75,28 +78,60 @@ export class DepartmentsController {
   constructor(
     @Inject(DB) private readonly db: Kysely<Database>,
     private readonly audit: AuditService,
-  ) {}
+    private readonly evolution: EvolutionClient,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext('Departments');
+  }
 
   @Get()
   async list(@CurrentUser() user: AuthUser) {
     let q = this.db.selectFrom('departments').selectAll().where('organization_id', '=', user.organizationId);
     if (user.role !== 'admin') q = q.where('id', 'in', user.departmentIds.length ? user.departmentIds : [0]);
     const rows = await q.orderBy('name').execute();
-    return rows.map((d) => ({
-      id: d.id,
-      name: d.name,
-      slug: d.slug,
-      evolutionInstance: d.evolution_instance,
-      waState: d.wa_state,
-      waNumber: d.wa_number,
-      agentNamePrefix: toBool(d.agent_name_prefix),
-      menuEnabled: toBool(d.menu_enabled),
-      menuMaxInvalid: d.menu_max_invalid,
-      closeMsgIndividual: toBool(d.close_msg_individual),
-      closeMsgGroup: toBool(d.close_msg_group),
-      catalogSource: d.catalog_source,
-      active: toBool(d.active),
-    }));
+    const ids = rows.map((r) => r.id);
+    const convCounts = new Map<number, number>();
+    const ticketCounts = new Map<number, number>();
+    if (ids.length) {
+      const [cRows, tRows] = await Promise.all([
+        this.db
+          .selectFrom('conversations')
+          .select(['department_id', sql<number>`COUNT(*)`.as('c')])
+          .where('department_id', 'in', ids)
+          .groupBy('department_id')
+          .execute(),
+        this.db
+          .selectFrom('tickets')
+          .select(['department_id', sql<number>`COUNT(*)`.as('c')])
+          .where('department_id', 'in', ids)
+          .groupBy('department_id')
+          .execute(),
+      ]);
+      for (const r of cRows) convCounts.set(r.department_id, Number(r.c));
+      for (const r of tRows) ticketCounts.set(r.department_id, Number(r.c));
+    }
+    return rows.map((d) => {
+      const conversationsCount = convCounts.get(d.id) ?? 0;
+      const ticketsCount = ticketCounts.get(d.id) ?? 0;
+      return {
+        id: d.id,
+        name: d.name,
+        slug: d.slug,
+        evolutionInstance: d.evolution_instance,
+        waState: d.wa_state,
+        waNumber: d.wa_number,
+        agentNamePrefix: toBool(d.agent_name_prefix),
+        menuEnabled: toBool(d.menu_enabled),
+        menuMaxInvalid: d.menu_max_invalid,
+        closeMsgIndividual: toBool(d.close_msg_individual),
+        closeMsgGroup: toBool(d.close_msg_group),
+        catalogSource: d.catalog_source,
+        active: toBool(d.active),
+        conversationsCount,
+        ticketsCount,
+        canDelete: conversationsCount === 0 && ticketsCount === 0,
+      };
+    });
   }
 
   @Post()
@@ -167,6 +202,66 @@ export class DepartmentsController {
       targetType: 'department',
       targetId: id,
       details: data,
+    });
+    return { ok: true };
+  }
+
+  @Delete(':id')
+  async remove(@CurrentUser() user: AuthUser, @Param('id') idRaw: string, @Req() req: Request) {
+    const id = parse(idParam, idRaw);
+    const dept = await this.findOrFail(id, user);
+
+    const totalRow = await this.db
+      .selectFrom('departments')
+      .select(sql<number>`COUNT(*)`.as('c'))
+      .where('organization_id', '=', user.organizationId)
+      .executeTakeFirstOrThrow();
+    if (Number(totalRow.c) <= 1) {
+      throw new BadRequestException('Não é possível remover a única caixa de entrada do sistema.');
+    }
+
+    const [conv, ticket, msg, media] = await Promise.all([
+      this.db.selectFrom('conversations').select('id').where('department_id', '=', id).limit(1).executeTakeFirst(),
+      this.db.selectFrom('tickets').select('id').where('department_id', '=', id).limit(1).executeTakeFirst(),
+      this.db.selectFrom('messages').select('id').where('department_id', '=', id).limit(1).executeTakeFirst(),
+      this.db.selectFrom('media_files').select('id').where('department_id', '=', id).limit(1).executeTakeFirst(),
+    ]);
+    if (conv || ticket || msg || media) {
+      throw new ConflictException(
+        'Esta caixa de entrada já possui conversas ou chamados registrados e não pode ser removida para preservar o histórico. Use a opção "Inativar".',
+      );
+    }
+
+    await this.db.transaction().execute(async (trx) => {
+      await trx.deleteFrom('contacts').where('department_id', '=', id).execute();
+      await trx.deleteFrom('bot_templates').where('department_id', '=', id).execute();
+      await trx.deleteFrom('classifications').where('department_id', '=', id).execute();
+      await trx.deleteFrom('email_recipients').where('department_id', '=', id).execute();
+      await trx.deleteFrom('user_departments').where('department_id', '=', id).execute();
+      await trx.deleteFrom('departments').where('id', '=', id).execute();
+    });
+
+    if (dept.evolution_instance) {
+      try {
+        if (dept.wa_state === 'open') {
+          await this.evolution.logout(dept.evolution_instance).catch(() => undefined);
+        }
+        await this.evolution.deleteInstance(dept.evolution_instance);
+      } catch (err) {
+        this.logger.warn(
+          { department_id: id, instance: dept.evolution_instance, err: (err as Error).message },
+          'caixa removida, mas não foi possível remover a instância na Evolution',
+        );
+      }
+    }
+
+    await this.audit.log({
+      action: 'admin.department.deleted',
+      user,
+      ip: clientIp(req),
+      targetType: 'department',
+      targetId: id,
+      details: { name: dept.name, evolutionInstance: dept.evolution_instance },
     });
     return { ok: true };
   }
@@ -285,11 +380,12 @@ export class DepartmentsController {
   private async findOrFail(id: number, user: AuthUser) {
     const d = await this.db
       .selectFrom('departments')
-      .select('id')
+      .select(['id', 'name', 'evolution_instance', 'wa_state', 'active'])
       .where('id', '=', id)
       .where('organization_id', '=', user.organizationId)
       .executeTakeFirst();
     if (!d) throw new NotFoundException('Caixa de entrada não encontrada.');
     assertInboxAccess(user, id);
+    return d;
   }
 }

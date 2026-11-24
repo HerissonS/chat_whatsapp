@@ -33,14 +33,15 @@
 |---|---|
 | Versão e digest fixos | Todas as imagens base (`tag@sha256:...`) |
 | Alpine | Todas, exceto o MariaDB (a imagem oficial não tem variante Alpine) |
-| Atualizações de segurança | `apk upgrade` nas imagens construídas, inclusive numa camada sobre a imagem oficial da Evolution |
+| Atualizações de segurança | `apk upgrade` nas imagens próprias construídas (`backend`, `frontend`, `backup`) |
 | Testes no build | A imagem do backend só é gerada se os testes passarem |
 | Contexto de build mínimo | Cada `.dockerignore` bloqueia tudo e libera só os arquivos usados no build; o `.env` (na raiz) nunca entra em nenhuma imagem |
-| Usuário não root | backend e worker (`node`), frontend (`nginx`), Redis, MariaDB, PostgreSQL, backup |
+| Usuário não root | backend e worker (`node`), frontend (`nginx`), backup (`1000:1000`), Redis, MariaDB, PostgreSQL |
 | Sistema de arquivos só leitura | Todos, exceto a Evolution |
 | `cap_drop: ALL` e `no-new-privileges` | Todos os containers |
 | Limites de CPU e memória | Todos os containers |
 | Superfície mínima | Sem npm, npx, yarn e corepack na imagem final do backend. Sem curl no frontend. Sem gosu na imagem de backup |
+| Supply Chain (GHCR + Cosign) | Imagens próprias multi-arch (`amd64`/`arm64`) publicadas por SHA/digest imutável, assinadas com Cosign keyless (Sigstore OIDC) e com SBOM CycloneDX atestado |
 
 A Evolution roda como root dentro do container, por limitação da imagem oficial. Ela fica sem capabilities, sem porta publicada e sem acesso de navegadores.
 
@@ -102,8 +103,7 @@ A Evolution roda como root dentro do container, por limitação da imagem oficia
 |---|---|
 | npm audit (produção) | 0 vulnerabilidades |
 | Imagens backend, frontend, backup, Redis | 0 HIGH/CRITICAL corrigíveis |
-| Evolution (sistema operacional) | 0 após `apk upgrade` |
-| Evolution (bibliotecas Node da própria Evolution) | Pendências do fornecedor. Mitigadas pelo isolamento de rede e sem porta publicada. Acompanhar novas versões |
+| Evolution (imagem oficial v2.3.7) | Pendências de bibliotecas Node upstream do fornecedor. Mitigadas pelo isolamento de rede (`internal` + `egress`), sem porta publicada, `cap_drop: ALL` e monitoramento diário pela pipeline |
 | MariaDB / PostgreSQL | Apenas o `gosu` (Go antigo), que não é executado porque os containers rodam com usuário fixo |
 | Gitleaks | Nenhum segredo encontrado |
 

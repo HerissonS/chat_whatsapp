@@ -24,6 +24,9 @@ RUN apk upgrade --no-cache && apk add --no-cache font-dejavu \
            /usr/local/bin/yarn /usr/local/bin/yarnpkg \
  && mkdir -p /data/media && chown node:node /data/media
 WORKDIR /app
+LABEL org.opencontainers.image.title="chat-whatsapp-backend" \
+      org.opencontainers.image.description="Central de Atendimento WhatsApp - API REST, WebSocket, webhook e worker" \
+      org.opencontainers.image.licenses="MIT"
 # Arquivos da aplicação pertencem ao root e são só leitura para o usuário node.
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist

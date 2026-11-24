@@ -17,7 +17,11 @@ export function EmailAdmin() {
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
-    if (!dep && depts?.length) setDep(depts[0].id);
+    if (!depts?.length) {
+      setDep(null);
+    } else if (!dep || !depts.some((d) => d.id === dep)) {
+      setDep(depts[0].id);
+    }
   }, [depts, dep]);
   const { data } = useQuery({ queryKey: ['admin-recipients', dep], queryFn: () => api.get<{ emails: string[] }>(`admin/departments/${dep}/email-recipients`), enabled: !!dep });
   useEffect(() => setEmails(data?.emails ?? []), [data]);
@@ -66,6 +70,7 @@ export function EmailAdmin() {
             {depts.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
+                {!d.active ? ' (Inativa)' : ''}
               </option>
             ))}
           </Select>

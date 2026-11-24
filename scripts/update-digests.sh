@@ -13,7 +13,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CHECK=0
 [ "${1:-}" = "--check" ] && CHECK=1
 
-FILES="$ROOT/docker-compose.yml $ROOT/backend/Dockerfile $ROOT/frontend/Dockerfile $ROOT/backup/Dockerfile $ROOT/evolution/Dockerfile $ROOT/scripts/security-scan.sh"
+FILES="$ROOT/docker-compose.yml $ROOT/docker-compose.prod.yml $ROOT/backend/Dockerfile $ROOT/frontend/Dockerfile $ROOT/backup/Dockerfile $ROOT/scripts/security-scan.sh"
 REFS="$(grep -hoE '[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}' $FILES | sort -u)"
 CHANGES=0
 

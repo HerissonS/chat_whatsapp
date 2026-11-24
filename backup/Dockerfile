@@ -6,5 +6,9 @@ FROM ${PG_IMAGE}
 # Correções de segurança do Alpine + cliente MariaDB. O gosu não é usado (o container roda com usuário fixo).
 RUN apk upgrade --no-cache && apk add --no-cache mariadb-client tzdata && rm -f /usr/local/bin/gosu
 COPY --chmod=0755 backup.sh /usr/local/bin/backup.sh
+LABEL org.opencontainers.image.title="chat-whatsapp-backup" \
+      org.opencontainers.image.description="Central de Atendimento WhatsApp - Backup diario do MariaDB e PostgreSQL" \
+      org.opencontainers.image.licenses="MIT"
+USER 1000:1000
 ENTRYPOINT ["/usr/local/bin/backup.sh"]
 CMD ["loop"]

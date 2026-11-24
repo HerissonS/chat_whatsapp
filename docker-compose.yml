@@ -129,10 +129,8 @@ services:
   # ---------------------------------------------------------------------------
   evolution:
     <<: *hardening
-    # Imagem oficial v2.3.7 (digest fixado em evolution/Dockerfile) + atualizações de segurança do Alpine.
-    build:
-      context: ./evolution
-    image: chat-whatsapp/evolution:2.3.7
+    # Imagem oficial da Evolution API fixada por versão e digest (@sha256).
+    image: evoapicloud/evolution-api:v2.3.7@sha256:1bd8afc4a6cf48822e6cf02469aeae7bd35a12a6b616eacd1291926307f4d339
     container_name: chat_wpp_evolution
     environment:
       TZ: ${TZ:-America/Sao_Paulo}

@@ -60,7 +60,7 @@ Erros seguem o formato `{ "statusCode": 400, "message": "..." }`. Erros de valid
 |---|---|
 | `GET/POST /admin/users`, `PATCH /admin/users/:id`, `POST /admin/users/:id/reset-password`, `POST /admin/users/:id/unlock` | admin.users |
 | `GET /admin/permissions` (catálogo), `GET/POST /admin/groups`, `PATCH/DELETE /admin/groups/:id` (`{ name, description, memberIds, permissions }`) | admin.users |
-| `GET/POST /admin/departments`, `PATCH /admin/departments/:id` | admin.departments |
+| `GET/POST /admin/departments`, `PATCH/DELETE /admin/departments/:id` | admin.departments |
 | `GET/PUT /admin/departments/:id/bot` | admin.bot |
 | `GET/PUT /admin/departments/:id/email-recipients`, `POST /admin/departments/:id/email-test` | admin.email |
 | `POST /admin/whatsapp/:departmentId/connect` (`{ number? }` para pareamento), `GET .../state`, `POST .../logout`, `POST .../restart`, `POST .../import-contacts` | admin.whatsapp |

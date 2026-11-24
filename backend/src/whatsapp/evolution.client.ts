@@ -180,6 +180,15 @@ export class EvolutionClient {
     await this.request('POST', `/instance/restart/${this.enc(instance)}`);
   }
 
+  async deleteInstance(instance: string): Promise<void> {
+    try {
+      await this.request('DELETE', `/instance/delete/${this.enc(instance)}`, undefined, 30_000, [404]);
+    } catch (err) {
+      if (err instanceof EvolutionError && err.status === 404) return;
+      throw err;
+    }
+  }
+
   // ---------------------------------------------------------------- mensagens
 
   sendText(instance: string, number: string, text: string, quotedId?: string): Promise<SentMessage> {

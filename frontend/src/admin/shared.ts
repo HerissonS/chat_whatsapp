@@ -15,6 +15,9 @@ export interface Department {
   closeMsgGroup: boolean;
   catalogSource: 'local' | 'external_mariadb';
   active: boolean;
+  conversationsCount: number;
+  ticketsCount: number;
+  canDelete: boolean;
 }
 
 export function useDepartments() {

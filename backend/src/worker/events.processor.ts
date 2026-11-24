@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import { PinoLogger } from 'nestjs-pino';
 import { BotService } from '../bot/bot.service.js';
+import { toBool } from '../common/validation.js';
 import { ChatEventsService } from '../chat/chat-events.service.js';
 import { ChatRepository } from '../chat/chat.repository.js';
 import { sendingKey } from '../chat/message-sender.service.js';
@@ -53,6 +54,8 @@ export class EventsProcessor {
     try {
       if (!dept) {
         this.logger.warn({ instance: row.instance, event: row.event }, 'evento de instância sem caixa de entrada associada');
+      } else if (!toBool(dept.active) && row.event !== 'connection.update') {
+        this.logger.info({ department_id: dept.id, event: row.event }, 'evento ignorado: caixa de entrada inativa');
       } else {
         await this.dispatch(row.event, payload.data, dept);
       }

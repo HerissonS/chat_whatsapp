@@ -16,14 +16,14 @@ O sistema é independente e autocontido. Tudo roda em Docker e é configurado pe
 
 | Serviço (nome usado nos comandos) | Container (padrão) | Função |
 |---|---|---|
-| frontend | `chat_frontend` | Interface web (React) e proxy para a API. **Único serviço com porta publicada** |
-| backend | `chat_backend` | API, WebSocket e webhook interno da Evolution |
-| worker | `chat_worker` | Filas: eventos do WhatsApp, mídia, PDF e e-mail |
-| mariadb | `chat_mariadb` | Banco do sistema (`chat_whatsapp`) |
-| redis | `chat_redis` | Sessões, filas e tempo real |
-| evolution | `chat_evolution` | Conexão com o WhatsApp (Evolution API v2.3.7) |
-| evolution_db | `chat_evolution_db` | Banco exclusivo da Evolution (PostgreSQL) |
-| backup | `chat_backup` | Backup diário dos dois bancos em `./backups` |
+| frontend | `chat_wpp_frontend` | Interface web (React) e proxy para a API. **Único serviço com porta publicada** |
+| backend | `chat_wpp_backend` | API, WebSocket e webhook interno da Evolution |
+| worker | `chat_wpp_worker` | Filas: eventos do WhatsApp, mídia, PDF e e-mail |
+| mariadb | `chat_wpp_mariadb` | Banco do sistema (`chat_whatsapp`) |
+| redis | `chat_wpp_redis` | Sessões, filas e tempo real |
+| evolution | `chat_wpp_evolution` | Conexão com o WhatsApp (Evolution API v2.3.7 oficial) |
+| evolution_db | `chat_wpp_evolution_db` | Banco exclusivo da Evolution (PostgreSQL) |
+| backup | `chat_wpp_backup` | Backup diário dos dois bancos em `./backups` |
 
 ## Instalação rápida
 
@@ -46,6 +46,7 @@ O passo a passo completo está em [docs/INSTALACAO.md](docs/INSTALACAO.md).
 
 | Script | Para quê |
 |---|---|
+| `scripts/deploy.sh` | Assistente interativo de implantação (`docker-compose.prod.yml` ou `docker-compose.yml`), gerando senhas/tokens aleatórios |
 | `scripts/init-env.sh` | Cria o `.env` com todos os segredos gerados |
 | `scripts/create-admin.sh` | Cria ou redefine um administrador (senha digitada sem aparecer) |
 | `scripts/seed-demo.sh` | Carrega contratos e equipamentos **fictícios** para testes |
@@ -63,9 +64,30 @@ O passo a passo completo está em [docs/INSTALACAO.md](docs/INSTALACAO.md).
 | [docs/OPERACAO.md](docs/OPERACAO.md) | Logs, backup, restauração, atualização, solução de problemas |
 | [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | Componentes, fluxos e modelo de dados |
 | [docs/API.md](docs/API.md) | Rotas da API e eventos em tempo real |
-| [docs/SEGURANCA.md](docs/SEGURANCA.md) | Medidas de segurança aplicadas |
+| [docs/SEGURANCA.md](docs/SEGURANCA.md) | Medidas de segurança aplicadas e pipelines DevSecOps |
 | [docs/CHECKLIST_HOMOLOGACAO.md](docs/CHECKLIST_HOMOLOGACAO.md) | Roteiro de testes com a equipe |
-| [docs/PLANO_IMPLEMENTACAO.md](docs/PLANO_IMPLEMENTACAO.md) | Escopo, decisões e fases |
+| [SECURITY.md](SECURITY.md) | Política de divulgação responsável e verificação Cosign |
+
+## Produção com imagens assinadas no GHCR
+
+Para implantar em produção (ou localmente) de forma guiada, com geração automática de senhas/tokens aleatórios e validação opcional via Cosign, execute:
+
+```sh
+scripts/deploy.sh
+```
+
+Ou manualmente com [docker-compose.prod.yml](docker-compose.prod.yml), definindo `BACKEND_IMAGE`, `FRONTEND_IMAGE` e `BACKUP_IMAGE` no `.env` com os digests `@sha256` publicados pela pipeline DevSecOps:
+
+```sh
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+As imagens são multi-arquitetura (`linux/amd64` e `linux/arm64`), assinadas com **Cosign (keyless OIDC)** e acompanhadas de **SBOM CycloneDX**. Veja [SECURITY.md](SECURITY.md) para validar as assinaturas antes do deploy.
+
+## Licença
+
+Este projeto é distribuído sob a **Licença MIT** (veja o texto oficial em [LICENSE](LICENSE)). Em resumo: você pode usar, copiar, modificar e distribuir o software livremente, desde que mantenha o aviso de direitos autorais e da licença, sem garantias expressas ou implícitas.
 
 ## Desenvolvimento
 

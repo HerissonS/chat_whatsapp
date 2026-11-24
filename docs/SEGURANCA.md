@@ -61,7 +61,7 @@ A Evolution roda como root dentro do container, por limitação da imagem oficia
 - **Cabeçalhos de segurança:**
   - CSP restritiva: só recursos do próprio servidor, sem scripts inline e sem iframes;
   - `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` e COOP.
-- **nginx:** versão oculta, arquivos ocultos bloqueados e limite de requisições por IP.
+- **nginx:** versão oculta, arquivos ocultos bloqueados, limite de requisições por IP e `Upgrade` restrito exclusivamente a `websocket` (mitigação contra *H2C smuggling*).
 - **Textos recebidos:** a formatação do WhatsApp é aplicada sem HTML. Os links abrem em nova aba com `noopener noreferrer`.
 - **Arquivos enviados:**
   - tamanho limitado (`MEDIA_MAX_MB`) e tipo identificado pelo conteúdo real, não pela extensão;
@@ -106,6 +106,14 @@ A Evolution roda como root dentro do container, por limitação da imagem oficia
 | Evolution (imagem oficial v2.3.7) | Pendências de bibliotecas Node upstream do fornecedor. Mitigadas pelo isolamento de rede (`internal` + `egress`), sem porta publicada, `cap_drop: ALL` e monitoramento diário pela pipeline |
 | MariaDB / PostgreSQL | Apenas o `gosu` (Go antigo), que não é executado porque os containers rodam com usuário fixo |
 | Gitleaks | Nenhum segredo encontrado |
+
+## Pipelines DevSecOps (GitHub Actions)
+
+Todas as pipelines operam com `permissions: {}` no nível global (menor privilégio por job), Actions pinadas por commit SHA de 40 caracteres, `persist-credentials: false`, sem upload SARIF (100% compatível com conta gratuita) e relatórios consolidados no GitHub Actions Job Summary:
+
+- **CI/CD & Supply Chain (`.github/workflows/devsecops-pipeline.yml`):** em PRs (`dev → main`) e merges na `main`, executa em cadeia: Gitleaks + testes unitários → Semgrep (SAST) → Trivy FS + CycloneDX (SCA & SBOM) → Trivy Config + Hadolint (Misconfiguration) → Build & Trivy Image + SBOM. No merge na `main`, constrói e publica as 3 imagens próprias (`backend`, `frontend`, `backup`) em multi-arquitetura (`linux/amd64`, `linux/arm64`) no GHCR com tag baseada em SHA, assina com **Cosign keyless (Sigstore OIDC)** pelo digest `@sha256`, atesta o SBOM CycloneDX e valida com `cosign verify`.
+- **Auditoria Diária (`.github/workflows/daily-security-audit.yml`):** roda diariamente verificando novas CVEs em dependências e imagens (GHCR e terceiros), pacotes `npm` desatualizados e novos digests `@sha256`, abrindo/atualizando automaticamente uma única Issue consolidada (`security-audit`).
+- **Dependabot (`.github/dependabot.yml`):** abre PRs semanais para `npm`, `docker` e `github-actions` direcionados à branch `dev`.
 
 ## Recomendações para produção
 

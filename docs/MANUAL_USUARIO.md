@@ -90,7 +90,7 @@ Cada **caixa de entrada** tem o seu próprio número de WhatsApp, menu do bot, t
 | WhatsApp | Conectar o número por QR Code ou código de pareamento, desconectar, reiniciar, **importar contatos** (também é feito automaticamente 1 minuto depois de conectar) |
 | Usuários | Criar usuários (senha temporária), escolher o perfil (Administrador ou Usuário), as caixas de entrada e os grupos, redefinir senha, desbloquear, desativar |
 | Grupos | Definir quais páginas e ações cada grupo acessa (Início, Atendimento e cada tela da Administração) e quem faz parte dele |
-| Caixas de entrada | Criar caixas (cada uma ganha a sua instância do WhatsApp), nome do atendente nas mensagens, menu ligado ou desligado, tentativas inválidas, mensagens de encerramento, fonte do catálogo |
+| Caixas de entrada | Criar, editar, **inativar/reativar** e **remover** caixas (remoção permitida quando não há histórico de conversas/chamados; inativar pausa o recebimento preservando o histórico), nome do atendente nas mensagens, menu ligado ou desligado, tentativas inválidas, mensagens de encerramento e fonte do catálogo |
 | Bot e menu | Por caixa de entrada: opções do menu (número, texto no menu, texto no assunto, padrão) e textos automáticos, com pré-visualização |
 | E-mail | Por caixa de entrada: destinatários dos encerramentos e e-mail de teste |
 | Contratos | Contratos extras (ex.: CHAMADO INTERNO), catálogo de contratos e equipamentos, importação CSV |

@@ -1,6 +1,6 @@
 # Configuração (variáveis de ambiente)
 
-Todas as variáveis ficam no arquivo `.env` na raiz do projeto, criado por `scripts/init-env.sh` a partir do `.env.example`.
+Todas as variáveis ficam no arquivo `.env` na raiz do projeto, criado por `scripts/deploy.sh` (ou `scripts/init-env.sh`) a partir do `.env.example`.
 Este documento descreve as variáveis, **sem valores reais**.
 
 Variáveis marcadas como **gerada** recebem um segredo aleatório (64 caracteres hexadecimais) na criação do `.env`.
@@ -98,6 +98,16 @@ Usado apenas nos caixas de entrada configurados com a fonte **Banco externo** (A
 | `CATALOG_DB_NAME` | Nome do banco |
 | `CATALOG_DB_USER` / `CATALOG_DB_PASSWORD` | Usuário **somente leitura** (SELECT nessas duas tabelas) |
 
-Se o servidor do banco externo não estiver na mesma rede, ele precisa ser alcançável a partir do container `chat_backend`.
+Se o servidor do banco externo não estiver na mesma rede, ele precisa ser alcançável a partir do container `chat_wpp_backend`.
 
-Depois de alterar o `.env`, aplique com `docker compose up -d`.
+## Imagens de produção (GHCR — `docker-compose.prod.yml`)
+
+Usadas apenas quando o sistema roda com `docker-compose.prod.yml`. Cada variável recebe a referência imutável (`tag` + `@sha256:...`) publicada pela pipeline DevSecOps na branch `main`.
+
+| Variável | Descrição |
+|---|---|
+| `BACKEND_IMAGE` | Imagem assinada do backend e worker no GHCR (`ghcr.io/<owner>/<repo>-backend:sha-...@sha256:...`) |
+| `FRONTEND_IMAGE` | Imagem assinada do frontend no GHCR (`ghcr.io/<owner>/<repo>-frontend:sha-...@sha256:...`) |
+| `BACKUP_IMAGE` | Imagem assinada do serviço de backup no GHCR (`ghcr.io/<owner>/<repo>-backup:sha-...@sha256:...`) |
+
+Depois de alterar o `.env`, aplique com `docker compose -f docker-compose.prod.yml up -d` (produção) ou `docker compose up -d` (local).

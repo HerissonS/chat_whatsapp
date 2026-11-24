@@ -59,10 +59,3 @@ Para acesso externo, publique o sistema atrás de um proxy reverso com TLS (ngin
 - defina `COOKIE_SECURE=true` no `.env` e reinicie com `docker compose up -d`;
 - o sistema funciona na raiz do domínio ou em um subcaminho (ex.: `/chat-whatsapp/`), porque o frontend usa caminhos relativos. Em subcaminho, o proxy deve remover o prefixo antes de repassar.
 
-## Servidor de teste atual
-
-| Item | Valor |
-|---|---|
-| Servidor | `10.254.2.200` |
-| Pasta | a pasta do projeto |
-| Endereço | `http://10.254.2.200:8870` |

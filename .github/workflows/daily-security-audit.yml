@@ -221,13 +221,13 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with:
+          pattern: daily-*
           path: daily-artifacts
 
       - name: Gerar relatorio diario e avaliar necessidade de alerta
         id: report
         env:
           ARTIFACTS_DIR: daily-artifacts
-          OUTPUT_SUMMARY: ${{ github.step_summary }}
           OUTPUT_ISSUE_BODY: daily-issue.md
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node .github/scripts/generate-daily-report.mjs

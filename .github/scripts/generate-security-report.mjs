@@ -187,31 +187,31 @@ const imageScans = {
 };
 
 const sboms = [
-  { scope: 'App: backend (npm)', file: 'sbom-backend.cdx.json', info: summarizeSbom('sbom-backend.cdx.json') },
-  { scope: 'App: frontend (npm)', file: 'sbom-frontend.cdx.json', info: summarizeSbom('sbom-frontend.cdx.json') },
-  { scope: 'Image: backend', file: 'sbom-image-backend.cdx.json', info: summarizeSbom('sbom-image-backend.cdx.json') },
-  { scope: 'Image: frontend', file: 'sbom-image-frontend.cdx.json', info: summarizeSbom('sbom-image-frontend.cdx.json') },
-  { scope: 'Image: backup', file: 'sbom-image-backup.cdx.json', info: summarizeSbom('sbom-image-backup.cdx.json') },
+  { scope: 'Aplicação: backend (npm)', file: 'sbom-backend.cdx.json', info: summarizeSbom('sbom-backend.cdx.json') },
+  { scope: 'Aplicação: frontend (npm)', file: 'sbom-frontend.cdx.json', info: summarizeSbom('sbom-frontend.cdx.json') },
+  { scope: 'Imagem Docker: backend', file: 'sbom-image-backend.cdx.json', info: summarizeSbom('sbom-image-backend.cdx.json') },
+  { scope: 'Imagem Docker: frontend', file: 'sbom-image-frontend.cdx.json', info: summarizeSbom('sbom-image-frontend.cdx.json') },
+  { scope: 'Imagem Docker: backup', file: 'sbom-image-backup.cdx.json', info: summarizeSbom('sbom-image-backup.cdx.json') },
 ];
 
 const publishedImages = readJson('published-images.json');
 
 const stages = [
-  { id: '1', name: 'Secrets & Unit Tests (Gitleaks + Build + Tests)', status: process.env.JOB_STATUS_SECRETS },
-  { id: '2', name: 'SAST — Análise Estática (Semgrep)', status: process.env.JOB_STATUS_SAST },
-  { id: '3', name: 'SCA & SBOM (Trivy FS + CycloneDX)', status: process.env.JOB_STATUS_SCA },
-  { id: '4', name: 'Misconfiguration & Lint (Trivy Config + Hadolint)', status: process.env.JOB_STATUS_MISCONFIG },
-  { id: '5', name: 'Image Build & Scan (3 imagens + Trivy Image + SBOM)', status: process.env.JOB_STATUS_IMAGES },
-  { id: '6', name: 'Publish Multi-Arch & Cosign Sign (GHCR — merge main)', status: process.env.JOB_STATUS_PUBLISH },
+  { id: '1', name: 'Segredos e Testes Unitários (Gitleaks + Build + Testes)', status: process.env.JOB_STATUS_SECRETS },
+  { id: '2', name: 'SAST — Análise Estática de Código (Semgrep)', status: process.env.JOB_STATUS_SAST },
+  { id: '3', name: 'SCA e SBOM (Trivy FS + CycloneDX)', status: process.env.JOB_STATUS_SCA },
+  { id: '4', name: 'Misconfiguration e Lint (Trivy Config + Hadolint)', status: process.env.JOB_STATUS_MISCONFIG },
+  { id: '5', name: 'Build e Varredura das Imagens (3 imagens + Trivy Image + SBOM)', status: process.env.JOB_STATUS_IMAGES },
+  { id: '6', name: 'Publicação Multi-Arch no GHCR e Assinatura Cosign (merge na main)', status: process.env.JOB_STATUS_PUBLISH },
 ];
 
 const lines = [];
 lines.push('<!-- devsecops-security-report -->');
 lines.push('# 🛡️ Relatório DevSecOps — `chat_whatsapp`');
 lines.push('');
-lines.push(`- **Evento:** \`${EVENT_NAME}\` | **Ref:** \`${GIT_REF}\` | **Commit:** \`${SHORT_SHA || 'N/A'}\``);
+lines.push(`- **Evento:** \`${EVENT_NAME}\` | **Branch/Ref:** \`${GIT_REF}\` | **Commit:** \`${SHORT_SHA || 'N/A'}\``);
 if (RUN_URL) {
-  lines.push(`- **Execução completa e Artifacts (JSON + SBOM CycloneDX):** [Abrir Workflow Run](${RUN_URL})`);
+  lines.push(`- **Execução completa e Artefatos (JSON + SBOM CycloneDX):** [Abrir execução da pipeline](${RUN_URL})`);
 }
 lines.push('');
 
@@ -230,7 +230,7 @@ lines.push('| Camada | Ferramenta / Alvo | CRITICAL / ERROR | HIGH / WARN | MEDI
 lines.push('| :--- | :--- | :---: | :---: | :---: | :---: | :---: |');
 
 lines.push(
-  `| **Secrets** | Gitleaks (código e docs) | ${gitleaksCount === null ? '—' : gitleaksCount} | — | — | — | ${
+  `| **Segredos** | Gitleaks (código e docs) | ${gitleaksCount === null ? '—' : gitleaksCount} | — | — | — | ${
     gitleaksCount === null ? '⏭️' : gitleaksCount === 0 ? '✅ 0 segredos' : `❌ ${gitleaksCount} segredo(s)`
   } |`
 );
@@ -292,7 +292,7 @@ lines.push(
 for (const svc of ['backend', 'frontend', 'backup']) {
   const scan = imageScans[svc];
   lines.push(
-    `| **Container Image** | Trivy Image — \`${svc}\` | ${scan.available ? scan.counts.CRITICAL : '—'} | ${
+    `| **Imagem Docker** | Trivy Image — \`${svc}\` | ${scan.available ? scan.counts.CRITICAL : '—'} | ${
       scan.available ? scan.counts.HIGH : '—'
     } | ${scan.available ? scan.counts.MEDIUM : '—'} | ${scan.available ? scan.counts.LOW : '—'} | ${
       !scan.available
@@ -307,7 +307,7 @@ lines.push('');
 
 lines.push('## 3. Inventário SBOM (CycloneDX)');
 lines.push('');
-lines.push('| Escopo | Artifact | Spec CycloneDX | Componentes |');
+lines.push('| Escopo | Artefato | Especificação CycloneDX | Componentes |');
 lines.push('| :--- | :--- | :---: | :---: |');
 for (const sbom of sboms) {
   if (sbom.info) {
@@ -368,7 +368,7 @@ if (Array.isArray(publishedImages) && publishedImages.length > 0) {
   lines.push('');
   lines.push('Arquiteturas publicadas: `linux/amd64`, `linux/arm64`');
   lines.push('');
-  lines.push('| Serviço | Referência Imutável (Tag + Digest) | Cosign Verify | SBOM CycloneDX Atestado |');
+  lines.push('| Serviço | Referência Imutável (Tag + Digest) | Verificação Cosign | SBOM CycloneDX Atestado |');
   lines.push('| :--- | :--- | :---: | :---: |');
   for (const img of publishedImages) {
     lines.push(
@@ -415,9 +415,11 @@ const markdown = `${lines.join('\n')}\n`;
 
 if (OUTPUT_SUMMARY) {
   fs.appendFileSync(OUTPUT_SUMMARY, markdown, 'utf8');
+  console.log(`Relatório consolidado gravado em ${OUTPUT_SUMMARY} (${markdown.length} bytes).`);
 }
 if (OUTPUT_PR_COMMENT) {
   fs.writeFileSync(OUTPUT_PR_COMMENT, markdown, 'utf8');
+  console.log(`Comentário de PR gravado em ${OUTPUT_PR_COMMENT} (${markdown.length} bytes).`);
 }
 if (!OUTPUT_SUMMARY && !OUTPUT_PR_COMMENT) {
   process.stdout.write(markdown);

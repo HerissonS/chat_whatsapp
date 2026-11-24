@@ -20,6 +20,9 @@ env:
   HADOLINT_IMAGE: ghcr.io/hadolint/hadolint:v2.12.0-alpine
   SEMGREP_IMAGE: semgrep/semgrep:latest
   NODE_VERSION: "24"
+  DOCKER_BUILD_SUMMARY: "false"
+  DOCKER_BUILD_NO_SUMMARY: "true"
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
 
 jobs:
   # ===========================================================================
@@ -613,7 +616,7 @@ jobs:
   # Sem upload SARIF (100% compativel com conta gratuita)
   # ===========================================================================
   security-report:
-    name: "7. Security Report"
+    name: "7. Relatório de Segurança"
     needs:
       - secrets-and-tests
       - sast-semgrep
@@ -637,16 +640,16 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Baixar todos os artifacts da pipeline
+      - name: Baixar artifacts dos relatórios de segurança
         continue-on-error: true
         uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with:
+          pattern: report-stage*
           path: all-artifacts
 
-      - name: Gerar relatorio consolidado para GITHUB_STEP_SUMMARY
+      - name: Gerar relatório consolidado em português para o GitHub Summary
         env:
           ARTIFACTS_DIR: all-artifacts
-          OUTPUT_SUMMARY: ${{ github.step_summary }}
           OUTPUT_PR_COMMENT: pr-comment.md
           EVENT_NAME: ${{ github.event_name }}
           GIT_SHA: ${{ github.sha }}

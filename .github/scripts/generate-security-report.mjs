@@ -356,6 +356,21 @@ if (trivyConfig.topFindings.length > 0) {
   );
 }
 
+const allHadolint = [
+  ...hadolint.backend.findings.map((f) => ({ file: 'backend/Dockerfile', ...f })),
+  ...hadolint.frontend.findings.map((f) => ({ file: 'frontend/Dockerfile', ...f })),
+  ...hadolint.backup.findings.map((f) => ({ file: 'backup/Dockerfile', ...f })),
+];
+
+if (allHadolint.length > 0) {
+  const rows = allHadolint.slice(0, 30).map(
+    (h) => `| \`${h.level.toUpperCase()}\` | \`${h.code}\` | \`${h.file}:${h.line}\` | ${h.message} |`
+  );
+  detailBlocks.push(
+    `<details>\n<summary>🐳 Achados Hadolint — Dockerfile Lint (${allHadolint.length})</summary>\n\n| Nível | Regra | Local | Mensagem |\n| :---: | :--- | :--- | :--- |\n${rows.join('\n')}\n\n</details>`
+  );
+}
+
 if (detailBlocks.length > 0) {
   lines.push('## 4. Detalhes dos Achados');
   lines.push('');

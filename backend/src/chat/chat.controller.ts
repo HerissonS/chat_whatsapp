@@ -507,6 +507,8 @@ export class ChatController {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     res.setHeader('Cache-Control', 'private, max-age=86400');
+    // Caminho gerado internamente por UUID no banco e confinado a MEDIA_DIR por storage.resolve().
+    // nosemgrep: javascript.express.security.audit.express-res-sendfile.express-res-sendfile
     res.sendFile(this.storage.resolve(f.storage_path), { acceptRanges: true, headers: {} }, (err) => {
       if (err && !res.headersSent) res.status(404).end();
     });

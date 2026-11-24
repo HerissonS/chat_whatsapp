@@ -21,7 +21,6 @@ env:
   SEMGREP_IMAGE: semgrep/semgrep:latest
   NODE_VERSION: "24"
   DOCKER_BUILD_SUMMARY: "false"
-  DOCKER_BUILD_NO_SUMMARY: "true"
   DOCKER_BUILD_RECORD_UPLOAD: "false"
 
 jobs:

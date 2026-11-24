@@ -219,7 +219,7 @@ jobs:
 
       - name: Baixar artifacts da auditoria diaria
         continue-on-error: true
-        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: daily-*
           path: daily-artifacts
@@ -233,7 +233,7 @@ jobs:
         run: node .github/scripts/generate-daily-report.mjs
 
       - name: Criar, atualizar ou fechar Issue consolidada (security-audit)
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           NEEDS_ISSUE: ${{ steps.report.outputs.needs_issue }}
         with:

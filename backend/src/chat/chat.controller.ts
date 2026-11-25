@@ -35,6 +35,7 @@ import { INLINE_MIME, MediaStorageService, sanitizeFileName } from '../media/med
 import { EvolutionClient, EvolutionError } from '../whatsapp/evolution.client.js';
 import { ChatEventsService } from './chat-events.service.js';
 import { ChatRepository } from './chat.repository.js';
+import { awaitingReplySql } from './waiting.js';
 import { MessageSenderService, type OutgoingMedia } from './message-sender.service.js';
 
 const cfg = loadConfig();
@@ -65,7 +66,7 @@ function mediaKind(mime: string): OutgoingMedia['kind'] {
 }
 
 const listSchema = z.object({
-  tab: z.enum(['mine', 'unassigned', 'menu', 'all', 'groups', 'closed', 'everything']).default('all'),
+  tab: z.enum(['mine', 'waiting', 'unassigned', 'menu', 'all', 'groups', 'closed', 'everything']).default('all'),
   q: z.string().trim().max(100).optional(),
   departmentId: z.coerce.number().int().positive().optional(),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
@@ -126,6 +127,9 @@ export class ChatController {
       case 'mine':
         b = b.where('cv.open_ticket_id', 'is not', null).where('t.assignee_id', '=', user.id);
         break;
+      case 'waiting':
+        b = b.where('cv.open_ticket_id', 'is not', null).where(awaitingReplySql);
+        break;
       case 'unassigned':
         b = b.where('cv.open_ticket_id', 'is not', null).where('t.status', '=', 'open').where('t.assignee_id', 'is', null);
         break;
@@ -167,12 +171,14 @@ export class ChatController {
   @RequirePermission('chat.read')
   async counts(@CurrentUser() user: AuthUser, @Query('departmentId') dep?: string) {
     const depts = dep ? [Number(dep)].filter((d) => user.departmentIds.includes(d)) : user.departmentIds;
-    if (!depts.length) return { mine: 0, unassigned: 0, menu: 0, all: 0, unread: 0 };
+    if (!depts.length) return { mine: 0, waiting: 0, unassigned: 0, menu: 0, all: 0, unread: 0 };
     const r = await this.chat.db
       .selectFrom('conversations as cv')
       .innerJoin('tickets as t', 't.id', 'cv.open_ticket_id')
+      .innerJoin('contacts as ct', 'ct.id', 'cv.contact_id')
       .select([
         sql<number>`SUM(t.assignee_id = ${user.id})`.as('mine'),
+        sql<number>`SUM(${awaitingReplySql})`.as('waiting'),
         sql<number>`SUM(t.status = 'open' AND t.assignee_id IS NULL)`.as('unassigned'),
         sql<number>`SUM(t.status = 'menu')`.as('menu'),
         sql<number>`COUNT(*)`.as('all'),
@@ -182,6 +188,7 @@ export class ChatController {
       .executeTakeFirst();
     return {
       mine: Number(r?.mine ?? 0),
+      waiting: Number(r?.waiting ?? 0),
       unassigned: Number(r?.unassigned ?? 0),
       menu: Number(r?.menu ?? 0),
       all: Number(r?.all ?? 0),

@@ -28,6 +28,36 @@ body,
   height: 100%;
 }
 
+/*
+ * Mãozinha em tudo que é clicável (o Tailwind 4 deixa botões com o cursor comum).
+ * Fica na camada base, então utilitários como `disabled:cursor-not-allowed` continuam valendo.
+ */
+@layer base {
+  button,
+  a[href],
+  summary,
+  select,
+  label:has(input[type='checkbox'], input[type='radio'], input[type='file'], input[type='color']),
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='file'],
+  input[type='color'],
+  [role='button'],
+  [role='tab'],
+  [role='radio'],
+  [role='switch'],
+  [role='checkbox'],
+  [role='menuitem'],
+  [role='option'] {
+    cursor: pointer;
+  }
+
+  :is(button, select, input, [role='button'], [role='tab'], [role='radio'], [role='switch'], [role='option']):disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+}
+
 body {
   margin: 0;
   background: var(--color-background);

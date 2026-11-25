@@ -19,7 +19,7 @@ Erros seguem o formato `{ "statusCode": 400, "message": "..." }`. Erros de valid
 
 | Método | Rota | Permissão | Descrição |
 |---|---|---|---|
-| GET | `/conversations?tab=&q=&offset=&limit=` | chat.read | `tab`: mine, unassigned, menu, all, groups, closed, everything |
+| GET | `/conversations?tab=&q=&offset=&limit=` | chat.read | `tab`: mine, waiting (aguardando resposta), unassigned, menu, all, groups, closed, everything |
 | GET | `/conversations/counts` | chat.read | Contadores das abas |
 | GET | `/conversations/:id` | chat.read | Resumo e histórico de chamados |
 | GET | `/conversations/:id/messages?beforeId=&limit=` | chat.read | Mensagens (paginação para trás) |

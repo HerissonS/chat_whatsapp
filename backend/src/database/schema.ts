@@ -38,6 +38,8 @@ export interface DepartmentsTable {
   close_msg_individual: Bool;
   close_msg_group: Bool;
   catalog_source: Generated<string>;
+  response_target_minutes: Generated<number>;
+  business_hours: string | null;
   active: Bool;
   created_at: CreatedAt;
   updated_at: UpdatedAt;

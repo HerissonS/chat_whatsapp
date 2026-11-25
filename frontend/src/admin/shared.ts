@@ -1,6 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 
+/** Expediente de um dia (HH:MM). Almoço opcional. */
+export interface BusinessDay {
+  open: string;
+  close: string;
+  lunchStart: string | null;
+  lunchEnd: string | null;
+}
+
+/** Índice 0 = domingo … 6 = sábado; null = sem expediente. */
+export interface BusinessHours {
+  days: Array<BusinessDay | null>;
+}
+
 export interface Department {
   id: number;
   name: string;
@@ -14,6 +27,8 @@ export interface Department {
   closeMsgIndividual: boolean;
   closeMsgGroup: boolean;
   catalogSource: 'local' | 'external_mariadb';
+  responseTargetMinutes: number;
+  businessHours: BusinessHours | null;
   active: boolean;
   conversationsCount: number;
   ticketsCount: number;

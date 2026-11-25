@@ -21,6 +21,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { type AuthUser, clientIp, CurrentUser, RequirePermission } from '../common/auth-user.js';
 import { cleanText, idParam, parse, toBool } from '../common/validation.js';
 import { assertInboxAccess } from './inbox-access.js';
+import { businessHoursSchema, parseBusinessHours } from '../dashboard/business-hours.js';
 import { DB } from '../database/database.module.js';
 import type { Database } from '../database/schema.js';
 import { EvolutionClient } from '../whatsapp/evolution.client.js';
@@ -36,6 +37,10 @@ const deptSchema = z.object({
   closeMsgGroup: z.boolean(),
   catalogSource: z.enum(['local', 'external_mariadb']),
   active: z.boolean(),
+  /** Meta de 1ª resposta, em minutos úteis. */
+  responseTargetMinutes: z.number().int().min(1).max(1440),
+  /** Horário de funcionamento; null = tempo corrido (24 h). */
+  businessHours: businessHoursSchema.nullable(),
 });
 
 const botSchema = z.object({
@@ -126,6 +131,8 @@ export class DepartmentsController {
         closeMsgIndividual: toBool(d.close_msg_individual),
         closeMsgGroup: toBool(d.close_msg_group),
         catalogSource: d.catalog_source,
+        responseTargetMinutes: d.response_target_minutes,
+        businessHours: parseBusinessHours(d.business_hours),
         active: toBool(d.active),
         conversationsCount,
         ticketsCount,
@@ -191,6 +198,8 @@ export class DepartmentsController {
         close_msg_individual: b(data.closeMsgIndividual),
         close_msg_group: b(data.closeMsgGroup),
         catalog_source: data.catalogSource,
+        response_target_minutes: data.responseTargetMinutes,
+        business_hours: data.businessHours === undefined ? undefined : data.businessHours ? JSON.stringify(data.businessHours) : null,
         active: b(data.active),
       })
       .where('id', '=', id)

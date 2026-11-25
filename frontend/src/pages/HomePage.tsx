@@ -1,33 +1,57 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, BellDot, Clock, Inbox, ListChecks, MailWarning, MessagesSquare, Timer, UserRound, UserX, Users, Zap } from 'lucide-react';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  CheckCheck,
+  Clock,
+  Hourglass,
+  Inbox,
+  ListChecks,
+  MailWarning,
+  Maximize,
+  MessageCircleQuestion,
+  Minimize,
+  Target,
+  Timer,
+  Headset,
+} from 'lucide-react';
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
-import { Card, cx, Spinner } from '../components/ui';
+import { Button, Card, cx, Spinner } from '../components/ui';
 import { api, qs } from '../lib/api';
 import { useInboxes } from '../lib/inboxes';
 import { navigate } from '../lib/router';
 import { getSocket } from '../lib/socket';
 
+type Tone = 'ok' | 'warning' | 'danger';
+
 interface Dashboard {
   days: number;
-  now: { openIndividual: number; openGroups: number; awaitingMenu: number; unassigned: number; mine: number; unreadConversations: number };
+  settings: { targetMinutes: number | null; businessHours: 'all' | 'some' | 'none' };
+  now: {
+    waiting: number;
+    longestWaitSec: number | null;
+    waitingTone: Tone | null;
+    awaitingMenu: number;
+    inService: number;
+    olderThan24h: number;
+  };
   period: {
     opened: number;
-    openedGroups: number;
+    openedPrev: number;
     closed: number;
+    closedPrev: number;
     avgResponseSec: number | null;
+    responseTone: Tone | null;
     responsesMeasured: number;
-    fastResponsePct: number | null;
-    fastResponseMinutes: number;
-    awaitingFirstResponse: number;
+    onTargetPct: number | null;
     avgDurationSec: number | null;
-    messagesReceived: number;
-    messagesSent: number;
     emailFailures: number;
   };
   perDay: Array<{ date: string; opened: number; closed: number }>;
+  byHour: number[];
   byClassification: Array<{ label: string; count: number }>;
-  byAgent: Array<{ name: string; closed: number; avgResponseSec: number | null }>;
+  topContracts: Array<{ label: string; count: number }>;
+  topEquipment: Array<{ label: string; count: number }>;
+  byAgent: Array<{ name: string; inService: number; closed: number; avgResponseSec: number | null; avgDurationSec: number | null }>;
 }
 
 const PERIODS = [
@@ -48,20 +72,43 @@ function dur(sec: number | null): string {
 
 const nf = new Intl.NumberFormat('pt-BR');
 
+const TONE_STYLE: Record<Tone, { icon: string; border: string; label: string }> = {
+  ok: { icon: 'bg-success/15 text-success', border: 'border-l-success', label: 'Dentro da meta' },
+  warning: { icon: 'bg-warning/15 text-warning', border: 'border-l-warning', label: 'Perto da meta' },
+  danger: { icon: 'bg-danger/12 text-danger', border: 'border-l-danger', label: 'Acima da meta' },
+};
+
 /** Cartão de indicador: número em destaque, rótulo e contexto. Clicável quando leva a uma lista. */
-function Stat({ icon, label, value, hint, onClick, tone }: { icon: ReactNode; label: string; value: string; hint?: string; onClick?: () => void; tone?: 'warning' }) {
+function Stat({
+  icon,
+  label,
+  value,
+  hint,
+  onClick,
+  tone,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  hint?: ReactNode;
+  onClick?: () => void;
+  tone?: Tone | null;
+}) {
   const Tag = onClick ? 'button' : 'div';
+  const t = tone ? TONE_STYLE[tone] : null;
   return (
     <Tag
       type={onClick ? 'button' : undefined}
       onClick={onClick}
+      title={t?.label}
       className={cx(
         'flex flex-col gap-2 rounded-app border border-border/50 bg-surface p-4 text-left shadow-sm transition-colors',
+        t && `border-l-4 ${t.border}`,
         onClick && 'hover:border-primary/50 hover:bg-primary/[0.03] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
       )}
     >
       <div className="flex items-center gap-2 text-sm text-muted">
-        <span className={cx('flex size-8 items-center justify-center rounded-full', tone === 'warning' ? 'bg-warning/15 text-warning' : 'bg-primary/10 text-primary')}>{icon}</span>
+        <span className={cx('flex size-8 shrink-0 items-center justify-center rounded-full', t ? t.icon : 'bg-primary/10 text-primary')}>{icon}</span>
         {label}
       </div>
       <div className="text-3xl font-semibold tracking-tight text-text tabular-nums">{value}</div>
@@ -70,57 +117,122 @@ function Stat({ icon, label, value, hint, onClick, tone }: { icon: ReactNode; la
   );
 }
 
-/** Barras verticais de uma série (chamados abertos por dia), com dica ao passar o mouse e tabela acessível. */
-function DailyBars({ data }: { data: Dashboard['perDay'] }) {
+/** Variação em relação ao período anterior equivalente. */
+function Delta({ cur, prev }: { cur: number; prev: number }) {
+  if (prev === 0) return <>{cur ? 'Sem registros no período anterior' : 'Igual ao período anterior'}</>;
+  const pct = Math.round(((cur - prev) / prev) * 100);
+  if (pct === 0) return <>Igual ao período anterior ({nf.format(prev)})</>;
+  return (
+    <>
+      <span className="font-medium text-text">
+        {pct > 0 ? '▲' : '▼'} {Math.abs(pct)}%
+      </span>{' '}
+      vs. período anterior ({nf.format(prev)})
+    </>
+  );
+}
+
+interface BarItem {
+  key: string;
+  tick: string;
+  showTick: boolean;
+  values: number[];
+  tooltip: ReactNode;
+}
+
+/** Barras verticais (uma ou mais séries lado a lado), com dica ao passar o mouse. */
+function VBars({ items, colors, label }: { items: BarItem[]; colors: string[]; label: string }) {
   const [hover, setHover] = useState<number | null>(null);
-  const max = Math.max(1, ...data.map((d) => d.opened));
+  const max = Math.max(1, ...items.flatMap((d) => d.values));
   const ticks = [max, Math.round(max / 2), 0].filter((v, i, a) => a.indexOf(v) === i);
+  return (
+    <div className="relative flex h-48 gap-3">
+      <div className="flex flex-col justify-between pb-6 text-right text-xs text-muted tabular-nums" aria-hidden>
+        {ticks.map((t) => (
+          <span key={t}>{t}</span>
+        ))}
+      </div>
+      <div className="relative flex-1">
+        <div className="pointer-events-none absolute inset-x-0 top-0 bottom-6 flex flex-col justify-between" aria-hidden>
+          {ticks.map((t) => (
+            <div key={t} className="border-t border-border/30" />
+          ))}
+        </div>
+        <div className="absolute inset-x-0 top-0 bottom-6 flex items-end gap-[3px]" role="img" aria-label={label}>
+          {items.map((d, i) => (
+            <div
+              key={d.key}
+              className={cx('relative flex h-full flex-1 items-end justify-center gap-px transition-opacity', hover != null && hover !== i && 'opacity-50')}
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover(null)}
+            >
+              {d.values.map((v, s) => (
+                <div
+                  key={s}
+                  className="w-full max-w-6 rounded-t-[3px]"
+                  style={{ height: `${(v / max) * 100}%`, minHeight: v ? 2 : 0, background: colors[s] }}
+                />
+              ))}
+              {hover === i && (
+                <div className="absolute bottom-full z-10 mb-1 rounded-app border border-border/50 bg-surface px-2.5 py-1.5 text-xs whitespace-nowrap text-text shadow-lg">
+                  {d.tooltip}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="absolute inset-x-0 bottom-0 flex gap-[3px] text-[11px] text-muted" aria-hidden>
+          {items.map((d) => (
+            <span key={d.key} className="flex-1 text-center whitespace-nowrap">
+              {d.showTick ? d.tick : ''}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const OPENED_COLOR = 'var(--color-primary)';
+const CLOSED_COLOR = 'color-mix(in srgb, var(--color-primary) 40%, transparent)';
+
+function Legend({ items }: { items: Array<[string, string]> }) {
+  return (
+    <div className="mb-3 flex flex-wrap gap-4 text-xs text-muted">
+      {items.map(([name, color]) => (
+        <span key={name} className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm" style={{ background: color }} />
+          {name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function DailyChart({ data }: { data: Dashboard['perDay'] }) {
   const label = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
   const every = data.length > 10 ? 5 : 1;
   return (
     <div>
-      <div className="relative flex h-48 gap-3">
-        <div className="flex flex-col justify-between pb-6 text-right text-xs text-muted tabular-nums" aria-hidden>
-          {ticks.map((t) => (
-            <span key={t}>{t}</span>
-          ))}
-        </div>
-        <div className="relative flex-1">
-          <div className="pointer-events-none absolute inset-x-0 top-0 bottom-6 flex flex-col justify-between" aria-hidden>
-            {ticks.map((t) => (
-              <div key={t} className="border-t border-border/30" />
-            ))}
-          </div>
-          <div className="absolute inset-x-0 top-0 bottom-6 flex items-end gap-[2px]" role="img" aria-label="Chamados abertos por dia">
-            {data.map((d, i) => (
-              <div
-                key={d.date}
-                className="relative flex h-full flex-1 items-end justify-center"
-                onMouseEnter={() => setHover(i)}
-                onMouseLeave={() => setHover(null)}
-              >
-                <div
-                  className={cx('w-full max-w-10 rounded-t-[4px] transition-opacity', hover != null && hover !== i ? 'opacity-50' : '')}
-                  style={{ height: `${(d.opened / max) * 100}%`, minHeight: d.opened ? 2 : 0, background: 'var(--color-primary)' }}
-                />
-                {hover === i && (
-                  <div className="absolute bottom-full z-10 mb-1 rounded-app border border-border/50 bg-surface px-2.5 py-1.5 text-xs whitespace-nowrap text-text shadow-lg">
-                    <div className="font-medium">{label(d.date)}</div>
-                    <div>{d.opened} aberto(s) · {d.closed} encerrado(s)</div>
-                  </div>
-                )}
+      <Legend items={[['Abertos', OPENED_COLOR], ['Encerrados', CLOSED_COLOR]]} />
+      <VBars
+        label="Chamados abertos e encerrados por dia"
+        colors={[OPENED_COLOR, CLOSED_COLOR]}
+        items={data.map((d, i) => ({
+          key: d.date,
+          tick: label(d.date),
+          showTick: i % every === 0 || i === data.length - 1,
+          values: [d.opened, d.closed],
+          tooltip: (
+            <>
+              <div className="font-medium">{label(d.date)}</div>
+              <div>
+                {d.opened} aberto(s) · {d.closed} encerrado(s)
               </div>
-            ))}
-          </div>
-          <div className="absolute inset-x-0 bottom-0 flex gap-[2px] text-[11px] text-muted" aria-hidden>
-            {data.map((d, i) => (
-              <span key={d.date} className="flex-1 text-center">
-                {i % every === 0 || i === data.length - 1 ? label(d.date) : ''}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
+            </>
+          ),
+        }))}
+      />
       <details className="mt-3 text-sm">
         <summary className="cursor-pointer text-xs text-muted hover:text-text">Ver como tabela</summary>
         <table className="mt-2 w-full text-left text-sm">
@@ -146,10 +258,34 @@ function DailyBars({ data }: { data: Dashboard['perDay'] }) {
   );
 }
 
-/** Barras horizontais de uma série (chamados por classificação) com o valor ao lado. */
-function ClassBars({ data }: { data: Dashboard['byClassification'] }) {
+function HourChart({ data }: { data: number[] }) {
+  if (!data.some(Boolean)) return <p className="text-sm text-muted">Nenhum chamado no período.</p>;
+  return (
+    <VBars
+      label="Chamados abertos por hora do dia"
+      colors={[OPENED_COLOR]}
+      items={data.map((n, h) => ({
+        key: String(h),
+        tick: `${h}h`,
+        showTick: h % 3 === 0,
+        values: [n],
+        tooltip: (
+          <>
+            <div className="font-medium">
+              {String(h).padStart(2, '0')}:00 – {String(h).padStart(2, '0')}:59
+            </div>
+            <div>{n} chamado(s)</div>
+          </>
+        ),
+      }))}
+    />
+  );
+}
+
+/** Barras horizontais com o valor ao lado (classificação, contratos, equipamentos). */
+function HBars({ data, empty }: { data: Array<{ label: string; count: number }>; empty: string }) {
   const max = Math.max(1, ...data.map((d) => d.count));
-  if (!data.length) return <p className="text-sm text-muted">Nenhum chamado no período.</p>;
+  if (!data.length) return <p className="text-sm text-muted">{empty}</p>;
   return (
     <ul className="space-y-3">
       {data.map((d) => (
@@ -159,12 +295,27 @@ function ClassBars({ data }: { data: Dashboard['byClassification'] }) {
             <span className="font-medium text-text tabular-nums">{d.count}</span>
           </div>
           <div className="h-2 rounded-full bg-text/5">
-            <div className="h-2 rounded-full" style={{ width: `${(d.count / max) * 100}%`, background: 'var(--color-primary)' }} />
+            <div className="h-2 rounded-full" style={{ width: `${(d.count / max) * 100}%`, background: OPENED_COLOR }} />
           </div>
         </li>
       ))}
     </ul>
   );
+}
+
+/** Tela cheia para deixar o painel em uma TV ou monitor da equipe. */
+function useFullscreen(ref: RefObject<HTMLElement | null>) {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const sync = () => setOn(document.fullscreenElement === ref.current);
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, [ref]);
+  const toggle = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void ref.current?.requestFullscreen?.().catch(() => undefined);
+  };
+  return { on, toggle, supported: typeof document !== 'undefined' && !!document.fullscreenEnabled };
 }
 
 export function HomePage() {
@@ -180,6 +331,8 @@ export function HomePage() {
     refetchInterval: 60_000,
   });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const fs = useFullscreen(root);
 
   useEffect(() => {
     try {
@@ -206,6 +359,7 @@ export function HomePage() {
   }, [qc]);
 
   const goTab = (tab: string) => {
+    if (document.fullscreenElement) void document.exitFullscreen();
     try {
       sessionStorage.setItem('atl-tab', tab);
     } catch {
@@ -216,46 +370,62 @@ export function HomePage() {
 
   const p = data?.period;
   const n = data?.now;
+  const s = data?.settings;
   const periodLabel = days === 1 ? 'hoje' : `nos últimos ${days} dias`;
+  const inboxName = inbox ? activeInboxes.find((i) => i.id === inbox)?.name : null;
+  const targetLabel = s?.targetMinutes ? `meta de ${s.targetMinutes} min` : 'meta de cada caixa';
+  const timeBasis =
+    s?.businessHours === 'all'
+      ? 'Tempos em horário de funcionamento.'
+      : s?.businessHours === 'some'
+        ? 'Tempos em horário de funcionamento (tempo corrido nas caixas sem horário definido).'
+        : 'Tempos corridos: defina o horário de funcionamento em Administração > Caixas de entrada.';
 
   return (
-    <div className="h-full overflow-y-auto bg-background">
-      <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
+    <div ref={root} className="h-full overflow-y-auto bg-background" style={fs.on ? { zoom: 1.15 } : undefined}>
+      <div className={cx('mx-auto space-y-6 p-4 sm:p-6', fs.on ? 'max-w-none' : 'max-w-6xl')}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-text">Olá, {me?.name.split(' ')[0]}</h1>
-            <p className="text-sm text-muted">Resumo do atendimento {periodLabel}.</p>
+            <h1 className="text-2xl font-semibold text-text">{fs.on ? `Atendimento${inboxName ? ` · ${inboxName}` : ''}` : `Olá, ${me?.name.split(' ')[0]}`}</h1>
+            <p className="text-sm text-muted">
+              Conversas com contatos {periodLabel} (grupos não entram nos indicadores). {timeBasis}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-          {activeInboxes.length > 1 && (
-            <select
-              value={inbox ?? ''}
-              onChange={(e) => setInbox(Number(e.target.value) || null)}
-              aria-label="Caixa de entrada"
-              className="h-10 rounded-app border border-border/50 bg-surface px-3 text-sm text-text focus:border-primary focus:outline-none"
-            >
-              <option value="">Todas as caixas de entrada</option>
-              {activeInboxes.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <div className="flex rounded-app border border-border/50 bg-surface p-0.5" role="radiogroup" aria-label="Período">
-            {PERIODS.map((o) => (
-              <button
-                key={o.d}
-                type="button"
-                role="radio"
-                aria-checked={days === o.d}
-                onClick={() => setDays(o.d)}
-                className={cx('rounded px-3 py-1.5 text-sm', days === o.d ? 'bg-primary text-primary-contrast' : 'text-muted hover:text-text')}
+            {activeInboxes.length > 1 && (
+              <select
+                value={inbox ?? ''}
+                onChange={(e) => setInbox(Number(e.target.value) || null)}
+                aria-label="Caixa de entrada"
+                className="h-10 rounded-app border border-border/50 bg-surface px-3 text-sm text-text focus:border-primary focus:outline-none"
               >
-                {o.label}
-              </button>
-            ))}
-          </div>
+                <option value="">Todas as caixas de entrada</option>
+                {activeInboxes.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <div className="flex rounded-app border border-border/50 bg-surface p-0.5" role="radiogroup" aria-label="Período">
+              {PERIODS.map((o) => (
+                <button
+                  key={o.d}
+                  type="button"
+                  role="radio"
+                  aria-checked={days === o.d}
+                  onClick={() => setDays(o.d)}
+                  className={cx('rounded px-3 py-1.5 text-sm', days === o.d ? 'bg-primary text-primary-contrast' : 'text-muted hover:text-text')}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            {fs.supported && (
+              <Button variant="secondary" onClick={fs.toggle} icon={fs.on ? <Minimize className="size-4" /> : <Maximize className="size-4" />}>
+                {fs.on ? 'Sair da tela cheia' : 'Tela cheia'}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -267,77 +437,91 @@ export function HomePage() {
 
         {n && p && data && (
           <>
+            {p.emailFailures > 0 && (
+              <div role="alert" className="flex items-start gap-3 rounded-app border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-text">
+                <MailWarning className="mt-0.5 size-4 shrink-0 text-warning" />
+                <span>
+                  <strong>{nf.format(p.emailFailures)}</strong> e-mail(s) de encerramento {periodLabel} não foram enviados. Reenvie pelo painel do contato, em
+                  Chamados anteriores.
+                </span>
+              </div>
+            )}
+
             <section>
               <h2 className="mb-3 text-xs font-semibold tracking-wide text-muted uppercase">Agora</h2>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-                <Stat icon={<MessagesSquare className="size-4" />} label="Em aberto" value={nf.format(n.openIndividual)} hint="Conversas individuais" onClick={() => goTab('all')} />
-                <Stat icon={<Users className="size-4" />} label="Grupos em aberto" value={nf.format(n.openGroups)} onClick={() => goTab('groups')} />
-                <Stat icon={<ListChecks className="size-4" />} label="Aguardando menu" value={nf.format(n.awaitingMenu)} onClick={() => goTab('menu')} />
-                <Stat icon={<UserX className="size-4" />} label="Sem responsável" value={nf.format(n.unassigned)} onClick={() => goTab('unassigned')} tone={n.unassigned ? 'warning' : undefined} />
-                <Stat icon={<UserRound className="size-4" />} label="Minhas" value={nf.format(n.mine)} onClick={() => goTab('mine')} />
-                <Stat icon={<BellDot className="size-4" />} label="Não lidas" value={nf.format(n.unreadConversations)} hint="Conversas com mensagens novas" onClick={() => goTab('all')} />
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Stat
+                  icon={<MessageCircleQuestion className="size-4" />}
+                  label="Aguardando resposta"
+                  value={nf.format(n.waiting)}
+                  hint={n.waiting ? `Maior espera: ${dur(n.longestWaitSec)} (${targetLabel})` : 'Nenhum contato esperando'}
+                  tone={n.waitingTone}
+                  onClick={() => goTab('waiting')}
+                />
+                <Stat icon={<ListChecks className="size-4" />} label="Aguardando menu" value={nf.format(n.awaitingMenu)} hint="Ainda não escolheram a opção" onClick={() => goTab('menu')} />
+                <Stat icon={<Headset className="size-4" />} label="Em atendimento" value={nf.format(n.inService)} hint="Chamados abertos com contatos" onClick={() => goTab('all')} />
+                <Stat
+                  icon={<Hourglass className="size-4" />}
+                  label="Abertos há mais de 24 h"
+                  value={nf.format(n.olderThan24h)}
+                  hint="Chamados que precisam de atenção"
+                  tone={n.olderThan24h ? 'danger' : null}
+                />
               </div>
             </section>
 
             <section>
               <h2 className="mb-3 text-xs font-semibold tracking-wide text-muted uppercase">No período</h2>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                <Stat icon={<Inbox className="size-4" />} label="Chamados abertos" value={nf.format(p.opened)} hint={<Delta cur={p.opened} prev={p.openedPrev} />} />
+                <Stat icon={<CheckCheck className="size-4" />} label="Encerrados" value={nf.format(p.closed)} hint={<Delta cur={p.closed} prev={p.closedPrev} />} />
                 <Stat
                   icon={<Clock className="size-4" />}
-                  label="Tempo médio de 1ª resposta"
+                  label="1ª resposta (média)"
                   value={dur(p.avgResponseSec)}
-                  hint={p.responsesMeasured ? `Sem grupos · ${p.responsesMeasured} atendimento(s) medido(s)` : 'Sem grupos · ainda sem respostas no período'}
+                  hint={p.responsesMeasured ? `${p.responsesMeasured} atendimento(s) medido(s) · ${targetLabel}` : 'Ainda sem respostas no período'}
+                  tone={p.responseTone}
                 />
                 <Stat
-                  icon={<Zap className="size-4" />}
-                  label={`Respondidos em até ${p.fastResponseMinutes} min`}
-                  value={p.fastResponsePct == null ? '—' : `${p.fastResponsePct}%`}
-                  hint="Do primeiro contato até a resposta de um atendente"
+                  icon={<Target className="size-4" />}
+                  label="Respondidos na meta"
+                  value={p.onTargetPct == null ? '—' : `${p.onTargetPct}%`}
+                  hint={`1ª resposta dentro da ${targetLabel}`}
                 />
-                <Stat icon={<Timer className="size-4" />} label="Duração média" value={dur(p.avgDurationSec)} hint="Da abertura ao encerramento (sem grupos)" />
-                <Stat
-                  icon={<AlertTriangle className="size-4" />}
-                  label="Aguardando 1ª resposta"
-                  value={nf.format(p.awaitingFirstResponse)}
-                  hint="Chamados abertos sem resposta de atendente"
-                  tone={p.awaitingFirstResponse ? 'warning' : undefined}
-                />
-                <Stat icon={<Inbox className="size-4" />} label="Chamados abertos" value={nf.format(p.opened)} hint={`+ ${nf.format(p.openedGroups)} de grupos`} />
-                <Stat icon={<ListChecks className="size-4" />} label="Encerrados" value={nf.format(p.closed)} />
-                <Stat
-                  icon={<MessagesSquare className="size-4" />}
-                  label="Mensagens"
-                  value={nf.format(p.messagesReceived + p.messagesSent)}
-                  hint={`${nf.format(p.messagesReceived)} recebidas · ${nf.format(p.messagesSent)} enviadas`}
-                />
-                <Stat
-                  icon={<MailWarning className="size-4" />}
-                  label="E-mails com falha"
-                  value={nf.format(p.emailFailures)}
-                  hint={p.emailFailures ? 'Reenvie pelo painel do contato' : 'Todos os encerramentos enviados'}
-                  tone={p.emailFailures ? 'warning' : undefined}
-                />
+                <Stat icon={<Timer className="size-4" />} label="Duração média" value={dur(p.avgDurationSec)} hint="Da abertura ao encerramento" />
               </div>
             </section>
 
             <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
               {days > 1 ? (
-                <Card title="Chamados abertos por dia" description="Conversas individuais e grupos. Passe o mouse para ver os encerrados.">
-                  <DailyBars data={data.perDay} />
+                <Card title="Abertos e encerrados por dia" description="Se os encerrados ficam abaixo dos abertos, a fila está crescendo.">
+                  <DailyChart data={data.perDay} />
                 </Card>
               ) : (
-                <Card title="Hoje">
-                  <p className="text-sm text-muted">
-                    {p.opened + p.openedGroups} chamado(s) aberto(s) e {p.closed} encerrado(s) até agora. Escolha 7 ou 30 dias para ver a evolução.
-                  </p>
+                <Card title="Chamados por hora" description="Abertos hoje, por hora de chegada.">
+                  <HourChart data={data.byHour} />
                 </Card>
               )}
               <Card title="Por classificação" description="Chamados abertos no período.">
-                <ClassBars data={data.byClassification} />
+                <HBars data={data.byClassification} empty="Nenhum chamado no período." />
               </Card>
             </div>
 
-            <Card title="Por atendente" description="Encerramentos no período e tempo médio de primeira resposta dos chamados de cada um.">
+            <div className={cx('grid gap-6', days > 1 ? 'lg:grid-cols-[2fr_1fr_1fr]' : 'md:grid-cols-2')}>
+              {days > 1 && (
+                <Card title="Chamados por hora do dia" description="Horários de maior procura no período, para planejar a escala.">
+                  <HourChart data={data.byHour} />
+                </Card>
+              )}
+              <Card title="Contratos com mais chamados" description="Encerrados no período.">
+                <HBars data={data.topContracts} empty="Nenhum encerramento no período." />
+              </Card>
+              <Card title="Equipamentos com mais chamados" description="Encerrados no período.">
+                <HBars data={data.topEquipment} empty="Nenhum equipamento informado no período." />
+              </Card>
+            </div>
+
+            <Card title="Por atendente" description="Chamados em atendimento agora, encerramentos no período e tempos médios dos chamados de cada um.">
               {!data.byAgent.length ? (
                 <p className="text-sm text-muted">Nenhum atendimento no período.</p>
               ) : (
@@ -346,16 +530,20 @@ export function HomePage() {
                     <thead className="text-xs text-muted">
                       <tr className="border-b border-border/40">
                         <th className="py-2 pr-3 font-medium">Atendente</th>
+                        <th className="py-2 pr-3 text-right font-medium">Em atendimento</th>
                         <th className="py-2 pr-3 text-right font-medium">Encerrados</th>
-                        <th className="py-2 text-right font-medium">1ª resposta (média)</th>
+                        <th className="py-2 pr-3 text-right font-medium">1ª resposta (média)</th>
+                        <th className="py-2 text-right font-medium">Duração (média)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.byAgent.map((a) => (
                         <tr key={a.name} className="border-b border-border/25 tabular-nums">
                           <td className="py-2 pr-3 text-text">{a.name}</td>
+                          <td className="py-2 pr-3 text-right">{nf.format(a.inService)}</td>
                           <td className="py-2 pr-3 text-right">{nf.format(a.closed)}</td>
-                          <td className="py-2 text-right">{dur(a.avgResponseSec)}</td>
+                          <td className="py-2 pr-3 text-right">{dur(a.avgResponseSec)}</td>
+                          <td className="py-2 text-right">{dur(a.avgDurationSec)}</td>
                         </tr>
                       ))}
                     </tbody>

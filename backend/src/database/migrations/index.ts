@@ -3,6 +3,7 @@ import * as m0001 from './0001_init.js';
 import * as m0002 from './0002_core.js';
 import * as m0003 from './0003_contact_avatars.js';
 import * as m0004 from './0004_group_permissions.js';
+import * as m0005 from './0005_inbox_business_hours.js';
 
 /**
  * Lista ordenada de migrations. Para criar uma nova:
@@ -15,4 +16,5 @@ export const migrations: Record<string, Migration> = {
   '0002_core': m0002,
   '0003_contact_avatars': m0003,
   '0004_group_permissions': m0004,
+  '0005_inbox_business_hours': m0005,
 };

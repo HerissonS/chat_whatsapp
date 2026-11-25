@@ -7,8 +7,9 @@ import { navigate } from '../lib/router';
 import type { Conversation } from '../lib/types';
 import { type Tab, useConversations, useCounts } from './data';
 
-const TABS: Array<{ id: Tab; label: string; count?: 'mine' | 'unassigned' | 'menu' | 'all' }> = [
+const TABS: Array<{ id: Tab; label: string; count?: 'mine' | 'waiting' | 'unassigned' | 'menu' | 'all' }> = [
   { id: 'mine', label: 'Minhas', count: 'mine' },
+  { id: 'waiting', label: 'Aguardando resposta', count: 'waiting' },
   { id: 'unassigned', label: 'Não atribuídas', count: 'unassigned' },
   { id: 'menu', label: 'Aguardando menu', count: 'menu' },
   { id: 'all', label: 'Todas', count: 'all' },

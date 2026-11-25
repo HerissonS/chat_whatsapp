@@ -140,6 +140,16 @@ docker compose up -d
 
 As migrations do banco são aplicadas automaticamente quando o backend sobe.
 
+### Versão com migration de banco
+
+Quando a versão nova traz migration (arquivo novo em `backend/src/database/migrations/`):
+
+1. Faça um backup manual antes (`docker compose -f docker-compose.prod.yml exec backup /usr/local/bin/backup.sh once`) e confira o arquivo novo em `./backups`.
+2. Atualize normalmente. O backend aplica a migration antes de subir; confira com `docker compose -f docker-compose.prod.yml logs backend | grep migration` (deve aparecer `migration aplicada`).
+3. Se a migration falhar, o backend não sobe e o erro aparece no mesmo log; os demais containers seguem funcionando.
+
+**Voltar para a versão anterior:** a versão antiga não conhece a migration nova e o backend dela recusa subir (o banco tem uma migration que ela não reconhece). Para voltar, restaure o backup do passo 1 (ver [Restauração](#restauração)) e depois volte as imagens.
+
 ## Parar e iniciar
 
 ```sh

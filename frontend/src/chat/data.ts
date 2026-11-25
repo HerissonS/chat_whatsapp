@@ -4,7 +4,7 @@ import { api, qs } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import type { Classification, Conversation, Message, SimpleUser, TicketHistoryItem } from '../lib/types';
 
-export type Tab = 'mine' | 'unassigned' | 'menu' | 'all' | 'groups' | 'closed' | 'everything';
+export type Tab = 'mine' | 'waiting' | 'unassigned' | 'menu' | 'all' | 'groups' | 'closed' | 'everything';
 
 interface ConvPage {
   items: Conversation[];
@@ -30,7 +30,7 @@ export function useConversations(tab: Tab, q: string, departmentId?: number | nu
 export function useCounts(departmentId?: number | null) {
   return useQuery({
     queryKey: ['conversation-counts', departmentId ?? null],
-    queryFn: () => api.get<{ mine: number; unassigned: number; menu: number; all: number; unread: number }>(`conversations/counts${qs({ departmentId })}`),
+    queryFn: () => api.get<{ mine: number; waiting: number; unassigned: number; menu: number; all: number; unread: number }>(`conversations/counts${qs({ departmentId })}`),
     staleTime: 10_000,
   });
 }

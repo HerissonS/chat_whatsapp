@@ -11,16 +11,24 @@
 
 ## Início
 
-A tela inicial resume o atendimento. O período (Hoje, 7 dias ou 30 dias) fica no canto superior direito.
+A tela inicial é um painel de gestão à vista. Conta **só conversas com contatos**: grupos ficam fora de todos os indicadores. O período (Hoje, 7 dias ou 30 dias) e a caixa de entrada ficam no canto superior direito. Os números se atualizam sozinhos.
 
-- **Agora:** chamados em aberto (individuais e grupos), aguardando menu, sem responsável, os seus e as conversas com mensagens não lidas. Clique em um cartão para abrir a lista correspondente.
-- **No período:**
-  - tempo médio de 1ª resposta e % respondidos em até 15 minutos, sempre **sem grupos** e contados do primeiro contato do técnico até a primeira mensagem de um atendente (o bot não conta);
-  - duração média, chamados aguardando resposta, abertos, encerrados, mensagens e e-mails com falha.
-- **Gráficos:** chamados por dia e por classificação.
-- **Tabela por atendente:** encerramentos e tempo médio de 1ª resposta de cada um.
+- **Tempos:** contam só dentro do **horário de funcionamento** da caixa de entrada, descontando o almoço. Uma mensagem que chega às 22 h e é respondida às 8h10 do dia seguinte (expediente a partir das 8 h) conta 10 minutos. Caixas sem horário definido contam o tempo corrido.
+- **Cores:** pela **meta de 1ª resposta** da caixa (padrão 15 minutos): verde abaixo de 2/3 da meta, amarelo até a meta, vermelho acima.
+- **Agora** (clique no cartão para abrir a lista):
 
-Os números se atualizam sozinhos.
+| Cartão | Mostra |
+|---|---|
+| Aguardando resposta | Chamados em que o contato escreveu por último e ninguém respondeu depois (o bot não conta), com a maior espera atual |
+| Aguardando menu | Contatos que ainda não escolheram a opção do menu |
+| Em atendimento | Chamados abertos com contatos |
+| Abertos há mais de 24 h | Chamados antigos que precisam de atenção |
+
+- **No período:** chamados abertos e encerrados (com a variação em relação ao período anterior), 1ª resposta média, % respondidos dentro da meta e duração média. A 1ª resposta vai do primeiro contato do técnico até a primeira mensagem de um atendente.
+- **Gráficos:** abertos e encerrados por dia, por classificação, chamados por hora do dia, contratos e equipamentos com mais chamados.
+- **Por atendente:** em atendimento agora, encerrados, 1ª resposta e duração médias.
+- **Aviso de e-mail:** aparece no topo só quando algum e-mail de encerramento falhou.
+- **Tela cheia:** deixa o painel em um monitor ou TV da equipe.
 
 ## Caixas de entrada
 
@@ -36,6 +44,7 @@ Cada **caixa de entrada** tem o seu próprio número de WhatsApp, menu do bot, t
 | Aba | Mostra |
 |---|---|
 | Minhas | Chamados abertos atribuídos a você |
+| Aguardando resposta | Chamados com contatos em que a última mensagem é do contato |
 | Não atribuídas | Chamados abertos sem responsável |
 | Aguardando menu | Contatos que ainda não escolheram a opção do menu |
 | Todas | Todos os chamados abertos |
@@ -90,7 +99,7 @@ Cada **caixa de entrada** tem o seu próprio número de WhatsApp, menu do bot, t
 | WhatsApp | Conectar o número por QR Code ou código de pareamento, desconectar, reiniciar, **importar contatos** (também é feito automaticamente 1 minuto depois de conectar) |
 | Usuários | Criar usuários (senha temporária), escolher o perfil (Administrador ou Usuário), as caixas de entrada e os grupos, redefinir senha, desbloquear, desativar |
 | Grupos | Definir quais páginas e ações cada grupo acessa (Início, Atendimento e cada tela da Administração) e quem faz parte dele |
-| Caixas de entrada | Criar, editar, **inativar/reativar** e **remover** caixas (remoção permitida quando não há histórico de conversas/chamados; inativar pausa o recebimento preservando o histórico), nome do atendente nas mensagens, menu ligado ou desligado, tentativas inválidas, mensagens de encerramento e fonte do catálogo |
+| Caixas de entrada | Criar, editar, **inativar/reativar** e **remover** caixas (remoção permitida quando não há histórico de conversas/chamados; inativar pausa o recebimento preservando o histórico), nome do atendente nas mensagens, menu ligado ou desligado, tentativas inválidas, mensagens de encerramento, fonte do catálogo, **meta de 1ª resposta** e **horário de funcionamento** (por dia da semana, com almoço) |
 | Bot e menu | Por caixa de entrada: opções do menu (número, texto no menu, texto no assunto, padrão) e textos automáticos, com pré-visualização |
 | E-mail | Por caixa de entrada: destinatários dos encerramentos e e-mail de teste |
 | Contratos | Contratos extras (ex.: CHAMADO INTERNO), catálogo de contratos e equipamentos, importação CSV |

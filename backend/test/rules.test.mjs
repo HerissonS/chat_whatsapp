@@ -140,3 +140,47 @@ describe('segurança e apresentação', () => {
     assert.equal(effectivePermissions('operator', []).length, 0);
   });
 });
+
+describe('horário de funcionamento (indicadores)', async () => {
+  const { businessMs, parseBusinessHours, slaTone, businessHoursSchema } = await import('../dist/dashboard/business-hours.js');
+  const tz = 'America/Sao_Paulo'; // UTC-3, sem horário de verão
+  const at = (s) => new Date(`${s}-03:00`).getTime();
+  const weekday = { open: '08:00', close: '18:00', lunchStart: '12:00', lunchEnd: '13:00' };
+  const hours = { days: [null, weekday, weekday, weekday, weekday, weekday, null] };
+  const min = (ms) => ms / 60_000;
+
+  it('sem horário definido conta o tempo corrido', () => {
+    assert.equal(min(businessMs(at('2026-11-23T22:00:00'), at('2026-11-24T08:10:00'), null, tz)), 610);
+  });
+  it('dentro do expediente conta normalmente', () => {
+    assert.equal(min(businessMs(at('2026-11-24T09:00:00'), at('2026-11-24T09:12:00'), hours, tz)), 12);
+  });
+  it('desconta o almoço', () => {
+    assert.equal(min(businessMs(at('2026-11-24T11:50:00'), at('2026-11-24T13:05:00'), hours, tz)), 15);
+  });
+  it('mensagem da noite respondida na manhã seguinte conta só a partir da abertura', () => {
+    assert.equal(min(businessMs(at('2026-11-23T22:00:00'), at('2026-11-24T08:10:00'), hours, tz)), 10);
+  });
+  it('fim de semana não conta (sexta 17:50 até segunda 08:05)', () => {
+    assert.equal(min(businessMs(at('2026-11-27T17:50:00'), at('2026-11-30T08:05:00'), hours, tz)), 15);
+  });
+  it('totalmente fora do expediente é zero', () => {
+    assert.equal(businessMs(at('2026-11-28T10:00:00'), at('2026-11-28T15:00:00'), hours, tz), 0);
+  });
+  it('semáforo: verde abaixo de 2/3 da meta, amarelo até a meta, vermelho acima', () => {
+    assert.equal(slaTone(9 * 60_000, 15), 'ok');
+    assert.equal(slaTone(10 * 60_000, 15), 'warning');
+    assert.equal(slaTone(15 * 60_000, 15), 'warning');
+    assert.equal(slaTone(16 * 60_000, 15), 'danger');
+  });
+  it('valida o horário informado', () => {
+    assert.equal(businessHoursSchema.safeParse(hours).success, true);
+    const bad = (d) => businessHoursSchema.safeParse({ days: [null, d, null, null, null, null, null] }).success;
+    assert.equal(bad({ open: '18:00', close: '08:00', lunchStart: null, lunchEnd: null }), false);
+    assert.equal(bad({ open: '08:00', close: '18:00', lunchStart: '12:00', lunchEnd: null }), false);
+    assert.equal(bad({ open: '08:00', close: '18:00', lunchStart: '07:00', lunchEnd: '08:30' }), false);
+    assert.equal(bad({ open: '8:00', close: '18:00', lunchStart: null, lunchEnd: null }), false);
+    assert.equal(parseBusinessHours('{"x":1}'), null);
+    assert.deepEqual(parseBusinessHours(JSON.stringify(hours)), hours);
+  });
+});

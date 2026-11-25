@@ -5,6 +5,7 @@ import { ConfirmDialog, Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { Badge, Button, Card, Field, IconButton, Input, Select, SwitchRow } from '../components/ui';
 import { api } from '../lib/api';
+import { BusinessHoursEditor, businessHoursError } from './BusinessHoursEditor';
 import { type Department, useDepartments } from './shared';
 
 export function DepartmentsAdmin() {
@@ -31,6 +32,11 @@ export function DepartmentsAdmin() {
 
   const save = async () => {
     if (!form) return;
+    const hoursErr = businessHoursError(form.businessHours);
+    if (hoursErr) {
+      toast.error(new Error(hoursErr));
+      return;
+    }
     setSaving(true);
     try {
       await api.patch(`admin/departments/${form.id}`, {
@@ -41,6 +47,8 @@ export function DepartmentsAdmin() {
         closeMsgIndividual: form.closeMsgIndividual,
         closeMsgGroup: form.closeMsgGroup,
         catalogSource: form.catalogSource,
+        responseTargetMinutes: form.responseTargetMinutes,
+        businessHours: form.businessHours,
         active: form.active,
       });
       toast.success('Caixa de entrada atualizada.');
@@ -119,7 +127,7 @@ export function DepartmentsAdmin() {
                 {d.active ? <Badge tone="success">Ativa</Badge> : <Badge tone="danger">Inativa</Badge>}
               </div>
               <div className="text-xs text-muted">
-                WhatsApp: {d.waState === 'open' ? `conectado${d.waNumber ? ` (+${d.waNumber})` : ''}` : 'não conectado'} · Instância: {d.evolutionInstance ?? 'não definida'} · Catálogo: {d.catalogSource === 'local' ? 'cadastro próprio' : 'banco externo'}
+                WhatsApp: {d.waState === 'open' ? `conectado${d.waNumber ? ` (+${d.waNumber})` : ''}` : 'não conectado'} · Instância: {d.evolutionInstance ?? 'não definida'} · Catálogo: {d.catalogSource === 'local' ? 'cadastro próprio' : 'banco externo'} · Meta: {d.responseTargetMinutes} min · {d.businessHours ? 'Horário de funcionamento definido' : 'Tempo corrido (24 h)'}
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -151,6 +159,7 @@ export function DepartmentsAdmin() {
         open={!!form}
         onClose={() => setEditing(null)}
         title="Configurar caixa de entrada"
+        size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setEditing(null)}>
@@ -190,6 +199,20 @@ export function DepartmentsAdmin() {
                 </Select>
               </Field>
             </div>
+            <Field
+              label="Meta de 1ª resposta (minutos)"
+              hint="Usada nos indicadores do Início: verde abaixo de 2/3 da meta, amarelo até a meta e vermelho acima. Padrão: 15."
+            >
+              <Input
+                type="number"
+                min={1}
+                max={1440}
+                value={form.responseTargetMinutes}
+                onChange={(e) => setForm({ ...form, responseTargetMinutes: Number(e.target.value) })}
+                className="sm:max-w-40"
+              />
+            </Field>
+            <BusinessHoursEditor value={form.businessHours} onChange={(businessHours) => setForm({ ...form, businessHours })} />
           </div>
         )}
       </Modal>

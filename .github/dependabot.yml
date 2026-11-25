@@ -52,6 +52,29 @@ updates:
       - dependencies
       - docker
 
+  # Imagens de terceiros fixadas por digest nos arquivos compose da raiz.
+  - package-ecosystem: docker-compose
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - docker
+    ignore:
+      # Versao major de banco exige migracao de dados: atualizar manualmente.
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
+      - dependency-name: mariadb
+        update-types: ["version-update:semver-major"]
+      # Evolution: somente correcoes (patch); minor/major mudam a API usada pelo backend.
+      - dependency-name: evoapicloud/evolution-api
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+
   - package-ecosystem: github-actions
     directory: /
     target-branch: dev

@@ -106,6 +106,9 @@ jobs:
               "frontend/Dockerfile",
               "backup/Dockerfile",
               "scripts/security-scan.sh",
+              ...fs.readdirSync(".github/workflows")
+                .filter((f) => /\.ya?ml$/.test(f))
+                .map((f) => `.github/workflows/${f}`),
             ].filter((f) => fs.existsSync(f));
 
             const refs = new Set();

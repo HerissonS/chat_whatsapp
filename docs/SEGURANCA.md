@@ -45,6 +45,22 @@
 
 A Evolution roda como root dentro do container, por limitação da imagem oficial. Ela fica sem capabilities, sem porta publicada e sem acesso de navegadores.
 
+### Risco residual da Evolution (imagem oficial)
+
+A Evolution é a única imagem de terceiros que o projeto não reconstrói. Ela é usada como publicada pelo fornecedor (versão e digest fixos), sem `apk upgrade`, e por isso herda as pendências do fornecedor:
+
+- **Pacotes do sistema (Alpine):** a última varredura apontou cerca de 56 pacotes com vulnerabilidades corrigidas upstream, ainda não atualizados na imagem oficial;
+- **Bibliotecas Node:** dependências do próprio código da Evolution.
+
+Não publicamos imagem derivada da Evolution, por decisão de não distribuir imagens de terceiros a partir deste repositório. As mitigações são:
+
+- só redes `internal` (bancos e backend) e `egress` (saída para o WhatsApp); nenhuma porta publicada e nenhum acesso de navegadores;
+- `cap_drop: ALL`, `no-new-privileges` e limites de CPU e memória;
+- apikey global conhecida só pelo backend;
+- auditoria diária da pipeline e Dependabot (somente versões *patch*) para adotar correções assim que o fornecedor publicar.
+
+Quem precisar zerar as pendências de pacotes do sistema pode, por conta própria, construir localmente uma imagem com `apk upgrade` e referenciá-la num `docker-compose.override.yml` (ignorado pelo Git), sem publicá-la.
+
 ## Rede
 
 | Rede | Tipo | Quem participa |
@@ -103,7 +119,7 @@ A Evolution roda como root dentro do container, por limitação da imagem oficia
 |---|---|
 | npm audit (produção) | 0 vulnerabilidades |
 | Imagens backend, frontend, backup, Redis | 0 HIGH/CRITICAL corrigíveis |
-| Evolution (imagem oficial v2.3.7) | Pendências de bibliotecas Node upstream do fornecedor. Mitigadas pelo isolamento de rede (`internal` + `egress`), sem porta publicada, `cap_drop: ALL` e monitoramento diário pela pipeline |
+| Evolution (imagem oficial v2.3.7) | Pendências upstream do fornecedor: pacotes Alpine (cerca de 56) e bibliotecas Node. Mitigadas conforme [Risco residual da Evolution](#risco-residual-da-evolution-imagem-oficial) |
 | MariaDB / PostgreSQL | Apenas o `gosu` (Go antigo), que não é executado porque os containers rodam com usuário fixo |
 | Gitleaks | Nenhum segredo encontrado |
 
@@ -111,9 +127,9 @@ A Evolution roda como root dentro do container, por limitação da imagem oficia
 
 Todas as pipelines operam com `permissions: {}` no nível global (menor privilégio por job), Actions pinadas por commit SHA de 40 caracteres, `persist-credentials: false`, sem upload SARIF (100% compatível com conta gratuita) e relatórios consolidados no GitHub Actions Job Summary:
 
-- **CI/CD & Supply Chain (`.github/workflows/devsecops-pipeline.yml`):** em PRs (`dev → main`) e merges na `main`, executa em cadeia: Gitleaks + testes unitários → Semgrep (SAST) → Trivy FS + CycloneDX (SCA & SBOM) → Trivy Config + Hadolint (Misconfiguration) → Build & Trivy Image + SBOM. No merge na `main`, constrói e publica as 3 imagens próprias (`backend`, `frontend`, `backup`) em multi-arquitetura (`linux/amd64`, `linux/arm64`) no GHCR com tag baseada em SHA, assina com **Cosign keyless (Sigstore OIDC)** pelo digest `@sha256`, atesta o SBOM CycloneDX e valida com `cosign verify`.
-- **Auditoria Diária (`.github/workflows/daily-security-audit.yml`):** roda diariamente verificando novas CVEs em dependências e imagens (GHCR e terceiros), pacotes `npm` desatualizados e novos digests `@sha256`, abrindo/atualizando automaticamente uma única Issue consolidada (`security-audit`).
-- **Dependabot (`.github/dependabot.yml`):** abre PRs semanais para `npm`, `docker` e `github-actions` direcionados à branch `dev`.
+- **CI/CD & Supply Chain (`.github/workflows/devsecops-pipeline.yml`):** em PRs para `dev` e `main` e merges na `main`, executa em cadeia: Gitleaks (árvore atual e commits do PR) + testes unitários → Semgrep (SAST) → Trivy FS + CycloneDX (SCA & SBOM) → Trivy Config + Hadolint (Misconfiguration) → Build & Trivy Image + SBOM. No merge na `main`, constrói e publica as 3 imagens próprias (`backend`, `frontend`, `backup`) em multi-arquitetura (`linux/amd64`, `linux/arm64`) no GHCR com tag baseada em SHA, assina com **Cosign keyless (Sigstore OIDC)** pelo digest `@sha256`, atesta o SBOM CycloneDX e valida com `cosign verify`. O comentário consolidado só é publicado em PRs do próprio repositório; em PRs do Dependabot e de forks (token somente leitura), o relatório fica no Job Summary.
+- **Auditoria Diária (`.github/workflows/daily-security-audit.yml`):** roda diariamente verificando novas CVEs em dependências e imagens (GHCR e terceiros), pacotes `npm` desatualizados e novos digests `@sha256` (compose, Dockerfiles, scripts e workflows), abrindo/atualizando automaticamente uma única Issue consolidada (`security-audit`).
+- **Dependabot (`.github/dependabot.yml`):** abre PRs semanais para `npm`, `docker` (Dockerfiles), `docker-compose` e `github-actions` direcionados à branch `dev`. No compose, ignora versões *major* de PostgreSQL e MariaDB (exigem migração de dados) e aceita só *patch* da Evolution.
 
 ## Recomendações para produção
 

@@ -356,7 +356,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build local da imagem backend (sem push)
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./backend
           platforms: linux/amd64
@@ -367,7 +367,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
 
       - name: Build local da imagem frontend (sem push)
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./frontend
           platforms: linux/amd64
@@ -378,7 +378,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend
 
       - name: Build local da imagem backup (sem push)
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./backup
           platforms: linux/amd64
@@ -511,7 +511,7 @@ jobs:
 
       - name: Build e Push Multi-Arch - backend
         id: push_backend
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./backend
           platforms: linux/amd64,linux/arm64
@@ -536,7 +536,7 @@ jobs:
 
       - name: Build e Push Multi-Arch - frontend
         id: push_frontend
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./frontend
           platforms: linux/amd64,linux/arm64
@@ -561,7 +561,7 @@ jobs:
 
       - name: Build e Push Multi-Arch - backup
         id: push_backup
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./backup
           platforms: linux/amd64,linux/arm64

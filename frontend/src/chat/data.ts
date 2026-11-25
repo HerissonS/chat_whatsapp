@@ -2,9 +2,40 @@ import { type InfiniteData, useInfiniteQuery, useQuery, useQueryClient } from '@
 import { useEffect, useRef } from 'react';
 import { api, qs } from '../lib/api';
 import { getSocket } from '../lib/socket';
+import { playSound } from '../lib/sound';
 import type { Classification, Conversation, Message, SimpleUser, TicketHistoryItem } from '../lib/types';
 
-export type Tab = 'mine' | 'waiting' | 'unassigned' | 'menu' | 'all' | 'groups' | 'closed' | 'everything';
+/** Filtros da lista de conversas. */
+export interface ListFilters {
+  /** Situação: abertas, encerradas ou todas. */
+  status: 'open' | 'closed' | 'all';
+  /** Fila dentro das abertas. */
+  queue: 'all' | 'mine' | 'waiting' | 'unassigned' | 'menu';
+  /** Contatos, grupos ou ambos. */
+  type: 'all' | 'contacts' | 'groups';
+  /** Caixa de entrada (null = todas). */
+  inbox: number | null;
+}
+
+export const DEFAULT_FILTERS: ListFilters = { status: 'open', queue: 'all', type: 'all', inbox: null };
+const FILTERS_KEY = 'atl-list';
+
+export function loadListFilters(): ListFilters {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(FILTERS_KEY) ?? 'null') as Partial<ListFilters> | null;
+    return { ...DEFAULT_FILTERS, ...(v ?? {}) };
+  } catch {
+    return { ...DEFAULT_FILTERS };
+  }
+}
+
+export function saveListFilters(f: ListFilters) {
+  try {
+    sessionStorage.setItem(FILTERS_KEY, JSON.stringify(f));
+  } catch {
+    /* sem armazenamento */
+  }
+}
 
 interface ConvPage {
   items: Conversation[];
@@ -17,20 +48,22 @@ interface MsgPage {
 
 const PAGE = 40;
 
-export function useConversations(tab: Tab, q: string, departmentId?: number | null) {
+/** Lista paginada. Com busca (q), o backend procura em todas as conversas, só respeitando a caixa. */
+export function useConversations(f: ListFilters, q: string) {
+  const params = { status: f.status, queue: f.status === 'open' ? f.queue : 'all', type: f.type, departmentId: f.inbox };
   return useInfiniteQuery({
-    queryKey: ['conversations', tab, q, departmentId ?? null],
+    queryKey: ['conversations', q ? { departmentId: f.inbox } : params, q],
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => api.get<ConvPage>(`conversations${qs({ tab, q, departmentId, offset: pageParam, limit: PAGE })}`),
+    queryFn: ({ pageParam }) => api.get<ConvPage>(`conversations${qs({ ...params, q, offset: pageParam, limit: PAGE })}`),
     getNextPageParam: (last, pages) => (last.hasMore ? pages.length * PAGE : undefined),
     staleTime: 15_000,
   });
 }
 
-export function useCounts(departmentId?: number | null) {
+export function useCounts(departmentId: number | null, type: ListFilters['type']) {
   return useQuery({
-    queryKey: ['conversation-counts', departmentId ?? null],
-    queryFn: () => api.get<{ mine: number; waiting: number; unassigned: number; menu: number; all: number; unread: number }>(`conversations/counts${qs({ departmentId })}`),
+    queryKey: ['conversation-counts', departmentId, type],
+    queryFn: () => api.get<{ mine: number; waiting: number; unassigned: number; menu: number; all: number; unread: number }>(`conversations/counts${qs({ departmentId, type })}`),
     staleTime: 10_000,
   });
 }
@@ -96,26 +129,6 @@ export function upsertMessageCache(qc: ReturnType<typeof useQueryClient>, m: Mes
   });
 }
 
-/** Som curto de notificação gerado no navegador (sem arquivos externos). */
-function beep() {
-  try {
-    const ctx = new AudioContext();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.value = 880;
-    g.gain.setValueAtTime(0.0001, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
-    o.connect(g).connect(ctx.destination);
-    o.start();
-    o.stop(ctx.currentTime + 0.26);
-    o.onended = () => void ctx.close();
-  } catch {
-    /* áudio bloqueado até a primeira interação */
-  }
-}
-
 /** Liga os eventos do WebSocket ao cache das consultas. */
 export function useRealtime(currentConversationId: number | null) {
   const qc = useQueryClient();
@@ -139,7 +152,7 @@ export function useRealtime(currentConversationId: number | null) {
       if (isNew && !notified.current.has(m.id) && (document.hidden || current.current !== m.conversationId)) {
         notified.current.add(m.id);
         if (notified.current.size > 500) notified.current = new Set([...notified.current].slice(-200));
-        beep();
+        void playSound();
         if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
           const n = new Notification(m.senderName ?? 'Nova mensagem', { body: m.body?.slice(0, 120) ?? 'Arquivo recebido', tag: `conv-${m.conversationId}` });
           n.onclick = () => {

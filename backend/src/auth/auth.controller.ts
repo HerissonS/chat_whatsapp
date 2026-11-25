@@ -168,10 +168,24 @@ export class AuthController {
         theme: z.enum(['light', 'dark', 'system']).optional(),
         sound: z.boolean().optional(),
         desktopNotifications: z.boolean().optional(),
+        notificationSound: z.enum(['classic', 'pop', 'double', 'chime', 'marimba', 'drop', 'soft', 'custom', 'none']).optional(),
+        soundVolume: z.number().int().min(0).max(100).optional(),
       }),
       body,
     );
-    await this.db.updateTable('users').set({ preferences: JSON.stringify(prefs) }).where('id', '=', user.id).execute();
+    // Mescla com as preferências já salvas (só altera o que veio na requisição).
+    const row = await this.db.selectFrom('users').select('preferences').where('id', '=', user.id).executeTakeFirstOrThrow();
+    let saved: Record<string, unknown> = {};
+    try {
+      saved = row.preferences ? (JSON.parse(row.preferences) as Record<string, unknown>) : {};
+    } catch {
+      saved = {};
+    }
+    await this.db
+      .updateTable('users')
+      .set({ preferences: JSON.stringify({ ...saved, ...prefs }) })
+      .where('id', '=', user.id)
+      .execute();
     return { ok: true };
   }
 

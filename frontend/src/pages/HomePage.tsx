@@ -20,6 +20,7 @@ import { api, qs } from '../lib/api';
 import { useInboxes } from '../lib/inboxes';
 import { navigate } from '../lib/router';
 import { getSocket } from '../lib/socket';
+import { type ListFilters, loadListFilters, saveListFilters } from '../chat/data';
 
 type Tone = 'ok' | 'warning' | 'danger';
 
@@ -358,13 +359,10 @@ export function HomePage() {
     };
   }, [qc]);
 
-  const goTab = (tab: string) => {
+  /** Abre o Atendimento com os filtros correspondentes ao cartão clicado. */
+  const goTab = (queue: ListFilters['queue']) => {
     if (document.fullscreenElement) void document.exitFullscreen();
-    try {
-      sessionStorage.setItem('atl-tab', tab);
-    } catch {
-      /* sem armazenamento */
-    }
+    saveListFilters({ ...loadListFilters(), status: 'open', queue, type: 'contacts', inbox });
     navigate('chat');
   };
 
@@ -388,7 +386,7 @@ export function HomePage() {
           <div>
             <h1 className="text-2xl font-semibold text-text">{fs.on ? `Atendimento${inboxName ? ` · ${inboxName}` : ''}` : `Olá, ${me?.name.split(' ')[0]}`}</h1>
             <p className="text-sm text-muted">
-              Conversas com contatos {periodLabel} (grupos não entram nos indicadores). {timeBasis}
+              Conversas com contatos {periodLabel} (grupos e contatos VIP não entram nos indicadores). {timeBasis}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

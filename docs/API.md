@@ -13,14 +13,14 @@ Erros seguem o formato `{ "statusCode": 400, "message": "..." }`. Erros de valid
 | POST | `/auth/logout` | Encerra a sessão atual |
 | GET | `/auth/me` | Usuário, permissões, caixas de entrada, token CSRF, limites |
 | POST | `/auth/change-password` | `{ currentPassword, newPassword }`. Encerra as outras sessões |
-| POST | `/auth/preferences` | Preferências do usuário |
+| POST | `/auth/preferences` | Preferências do usuário (tema, `notificationSound`, `soundVolume`); mescla com as já salvas |
 
 ## Atendimento
 
 | Método | Rota | Permissão | Descrição |
 |---|---|---|---|
-| GET | `/conversations?tab=&q=&offset=&limit=` | chat.read | `tab`: mine, waiting (aguardando resposta), unassigned, menu, all, groups, closed, everything |
-| GET | `/conversations/counts` | chat.read | Contadores das abas |
+| GET | `/conversations?status=&queue=&type=&departmentId=&q=&offset=&limit=` | chat.read | `status`: open, closed, all · `queue` (só em open): all, mine, waiting, unassigned, menu · `type`: all, contacts, groups · com `q`, busca em todas as conversas |
+| GET | `/conversations/counts?departmentId=&type=` | chat.read | Contadores das filas das conversas abertas |
 | GET | `/conversations/:id` | chat.read | Resumo e histórico de chamados |
 | GET | `/conversations/:id/messages?beforeId=&limit=` | chat.read | Mensagens (paginação para trás) |
 | POST | `/conversations/:id/read` | chat.read | Zera não lidas e envia confirmação de leitura |

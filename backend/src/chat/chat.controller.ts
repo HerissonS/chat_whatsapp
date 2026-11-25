@@ -65,13 +65,23 @@ function mediaKind(mime: string): OutgoingMedia['kind'] {
   return 'document';
 }
 
+/**
+ * Filtros da lista de conversas:
+ * - status: abertas (chamado aberto ou conversa nova), encerradas ou todas;
+ * - queue: fila dentro das abertas (ignorada nas demais situações);
+ * - type: contatos, grupos ou ambos.
+ */
 const listSchema = z.object({
-  tab: z.enum(['mine', 'waiting', 'unassigned', 'menu', 'all', 'groups', 'closed', 'everything']).default('all'),
+  status: z.enum(['open', 'closed', 'all']).default('open'),
+  queue: z.enum(['all', 'mine', 'waiting', 'unassigned', 'menu']).default('all'),
+  type: z.enum(['all', 'contacts', 'groups']).default('all'),
   q: z.string().trim().max(100).optional(),
   departmentId: z.coerce.number().int().positive().optional(),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
   limit: z.coerce.number().int().min(1).max(100).default(40),
 });
+
+const countsSchema = listSchema.pick({ departmentId: true, type: true });
 
 @Controller()
 export class ChatController {
@@ -123,30 +133,30 @@ export class ChatController {
     const depts = q.departmentId ? [q.departmentId].filter((d) => user.departmentIds.includes(d)) : user.departmentIds;
     if (!depts.length) return { items: [], hasMore: false };
     let b = this.chat.listConversationsQuery().where('cv.department_id', 'in', depts);
-    switch (q.tab) {
-      case 'mine':
-        b = b.where('cv.open_ticket_id', 'is not', null).where('t.assignee_id', '=', user.id);
-        break;
-      case 'waiting':
-        b = b.where('cv.open_ticket_id', 'is not', null).where(awaitingReplySql);
-        break;
-      case 'unassigned':
-        b = b.where('cv.open_ticket_id', 'is not', null).where('t.status', '=', 'open').where('t.assignee_id', 'is', null);
-        break;
-      case 'menu':
-        b = b.where('cv.open_ticket_id', 'is not', null).where('t.status', '=', 'menu');
-        break;
-      case 'all':
-        b = b.where((eb) => eb.or([eb('cv.open_ticket_id', 'is not', null), eb('cv.last_message_at', 'is', null)]));
-        break;
-      case 'groups':
-        b = b.where('ct.is_group', '=', 1);
-        break;
-      case 'closed':
+    // A busca procura em todas as conversas, sem os demais filtros (exceto a caixa).
+    if (!q.q) {
+      if (q.type !== 'all') b = b.where('ct.is_group', '=', q.type === 'groups' ? 1 : 0);
+      if (q.status === 'closed') {
         b = b.where('cv.open_ticket_id', 'is', null).where('t.status', '=', 'closed');
-        break;
-      case 'everything':
-        break;
+      } else if (q.status === 'open') {
+        switch (q.queue) {
+          case 'all':
+            b = b.where((eb) => eb.or([eb('cv.open_ticket_id', 'is not', null), eb('cv.last_message_at', 'is', null)]));
+            break;
+          case 'mine':
+            b = b.where('cv.open_ticket_id', 'is not', null).where('t.assignee_id', '=', user.id);
+            break;
+          case 'waiting':
+            b = b.where('cv.open_ticket_id', 'is not', null).where(awaitingReplySql);
+            break;
+          case 'unassigned':
+            b = b.where('cv.open_ticket_id', 'is not', null).where('t.status', '=', 'open').where('t.assignee_id', 'is', null);
+            break;
+          case 'menu':
+            b = b.where('cv.open_ticket_id', 'is not', null).where('t.status', '=', 'menu');
+            break;
+        }
+      }
     }
     if (q.q) {
       const like = `%${q.q.replace(/[%_\\]/g, '\\$&')}%`;
@@ -169,10 +179,11 @@ export class ChatController {
 
   @Get('conversations/counts')
   @RequirePermission('chat.read')
-  async counts(@CurrentUser() user: AuthUser, @Query('departmentId') dep?: string) {
-    const depts = dep ? [Number(dep)].filter((d) => user.departmentIds.includes(d)) : user.departmentIds;
+  async counts(@CurrentUser() user: AuthUser, @Query() query: unknown) {
+    const q = parse(countsSchema, query);
+    const depts = q.departmentId ? [q.departmentId].filter((d) => user.departmentIds.includes(d)) : user.departmentIds;
     if (!depts.length) return { mine: 0, waiting: 0, unassigned: 0, menu: 0, all: 0, unread: 0 };
-    const r = await this.chat.db
+    let c = this.chat.db
       .selectFrom('conversations as cv')
       .innerJoin('tickets as t', 't.id', 'cv.open_ticket_id')
       .innerJoin('contacts as ct', 'ct.id', 'cv.contact_id')
@@ -184,8 +195,9 @@ export class ChatController {
         sql<number>`COUNT(*)`.as('all'),
         sql<number>`SUM(cv.unread_count > 0)`.as('unread'),
       ])
-      .where('cv.department_id', 'in', depts)
-      .executeTakeFirst();
+      .where('cv.department_id', 'in', depts);
+    if (q.type !== 'all') c = c.where('ct.is_group', '=', q.type === 'groups' ? 1 : 0);
+    const r = await c.executeTakeFirst();
     return {
       mine: Number(r?.mine ?? 0),
       waiting: Number(r?.waiting ?? 0),

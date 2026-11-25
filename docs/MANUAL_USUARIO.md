@@ -6,12 +6,13 @@
 - Depois de 5 senhas erradas seguidas, o usuário fica bloqueado por 15 minutos. Um administrador pode desbloquear antes.
 - O ícone no canto inferior esquerdo alterna o tema: claro, escuro ou automático (segue o computador).
 - **Tamanho do texto:** no menu do seu avatar, escolha Padrão, A, A+ ou A++. Vale só para você.
-- No menu do seu avatar: **Trocar senha** e **Sair**.
+- No menu do seu avatar: **Trocar senha**, **Som de notificação** e **Sair**.
+- **Som de notificação:** escolha entre vários sons, ajuste o volume e ouça antes de salvar. Vale para o seu usuário em qualquer computador. Também dá para usar um **arquivo próprio** (MP3, OGG, WAV ou M4A, até 300 KB e 6 segundos), que fica salvo só no navegador em que foi escolhido.
 - A bolinha acima do tema mostra o WhatsApp: verde (conectado), amarela (conectando) ou vermelha (desconectado).
 
 ## Início
 
-A tela inicial é um painel de gestão à vista. Conta **só conversas com contatos**: grupos ficam fora de todos os indicadores. O período (Hoje, 7 dias ou 30 dias) e a caixa de entrada ficam no canto superior direito. Os números se atualizam sozinhos.
+A tela inicial é um painel de gestão à vista. Conta **só conversas com contatos**: grupos e contatos **VIP** ficam fora de todos os indicadores, porque as conversas VIP ficam abertas permanentemente (gerência, outros setores, robôs de alerta). O período (Hoje, 7 dias ou 30 dias) e a caixa de entrada ficam no canto superior direito. Os números se atualizam sozinhos.
 
 - **Tempos:** contam só dentro do **horário de funcionamento** da caixa de entrada, descontando o almoço. Uma mensagem que chega às 22 h e é respondida às 8h10 do dia seguinte (expediente a partir das 8 h) conta 10 minutos. Caixas sem horário definido contam o tempo corrido.
 - **Cores:** pela **meta de 1ª resposta** da caixa (padrão 15 minutos): verde abaixo de 2/3 da meta, amarelo até a meta, vermelho acima.
@@ -34,24 +35,26 @@ A tela inicial é um painel de gestão à vista. Conta **só conversas com conta
 
 Cada **caixa de entrada** tem o seu próprio número de WhatsApp, menu do bot, textos e destinatários de e-mail (por exemplo, Suporte e Compras). Você vê apenas as conversas das caixas em que está.
 
-- Quando você está em mais de uma caixa, a lista de conversas ganha o seletor **Todas as caixas de entrada**, e cada conversa mostra a caixa a que pertence.
+- Quando você está em mais de uma caixa, o botão **Filtros** da lista de conversas permite escolher a caixa, e cada conversa mostra a caixa a que pertence.
 - Na **Nova conversa**, escolha por qual caixa (qual WhatsApp) a conversa vai sair.
 - O Início também pode ser filtrado por caixa.
 
 ## Atendimento
 
 ### Lista de conversas
-| Aba | Mostra |
-|---|---|
-| Minhas | Chamados abertos atribuídos a você |
-| Aguardando resposta | Chamados com contatos em que a última mensagem é do contato |
-| Não atribuídas | Chamados abertos sem responsável |
-| Aguardando menu | Contatos que ainda não escolheram a opção do menu |
-| Todas | Todos os chamados abertos |
-| Grupos | Conversas de grupos |
-| Encerradas | Conversas cujo último chamado foi encerrado |
+- **Situação** (no topo da lista): **Abertas** (com o total), **Encerradas** ou **Todas**.
+- **Fila** (só em Abertas), com a quantidade de cada uma:
 
-- **Buscar** por nome ou telefone: clique na busca ou use `Ctrl+K`.
+| Fila | Mostra |
+|---|---|
+| Todas as abertas | Todos os chamados abertos e conversas novas |
+| Minhas | Chamados abertos atribuídos a você |
+| Aguardando resposta | Chamados com contatos em que a última mensagem é do contato (inclui VIP) |
+| Sem responsável | Chamados abertos sem atendente |
+| Aguardando menu | Contatos que ainda não escolheram a opção do menu |
+
+- **Filtros** (botão ao lado da busca): **Caixa de entrada** e **Tipo** (Todos, Contatos ou Grupos). Os filtros ligados aparecem como etiquetas embaixo; clique no **X** para remover. Um ponto no botão indica que há filtro ativo.
+- **Buscar** por nome ou telefone: clique na busca ou use `Ctrl+K`. A busca procura em todas as conversas (respeitando só a caixa de entrada escolhida).
 - **Nova conversa:** botão **+**. Pesquise o contato na agenda do WhatsApp pelo nome ou número, ou digite um número completo, com DDI e DDD.
 - **Fechar a conversa:** botão **X** no topo da conversa ou tecla `Esc`.
 - Para receber avisos com o navegador minimizado, clique no sino e permita as notificações.

@@ -35,7 +35,8 @@ function top(values: Array<string | null>, n: number) {
 
 /**
  * Indicadores da tela de Início (gestão à vista).
- * - Só conversas com contatos: grupos ficam fora de todos os números.
+ * - Só conversas com contatos: grupos e contatos VIP (conversas permanentes, que não são
+ *   encerradas: gerência, outros setores, robôs de alerta) ficam fora de todos os números.
  * - Tempos (1ª resposta, espera, duração) contam só dentro do horário de funcionamento
  *   da caixa de entrada, descontando o almoço. Sem horário definido, contam o tempo corrido.
  * - 1ª resposta: do primeiro contato do técnico até a primeira mensagem de um atendente
@@ -102,6 +103,7 @@ export class DashboardController {
       .where('t.department_id', 'in', depts)
       .where('t.status', 'in', ['menu', 'open'])
       .where('ct.is_group', '=', 0)
+      .where('ct.is_vip', '=', 0)
       .execute();
 
     // Início da espera: primeira mensagem do contato depois da última resposta de um atendente.
@@ -140,6 +142,7 @@ export class DashboardController {
       .select(['t.id', 't.department_id', 't.origin', 't.opened_at', 't.assignee_id', 'cl.subject_label'])
       .where('t.department_id', 'in', depts)
       .where('ct.is_group', '=', 0)
+      .where('ct.is_vip', '=', 0)
       .where('t.opened_at', '>=', since)
       .execute();
 
@@ -150,6 +153,7 @@ export class DashboardController {
       .select(['t.id', 't.department_id', 't.opened_at', 't.closed_at', 't.assignee_id', 't.email_status', 't.contract', 't.equipment'])
       .where('t.department_id', 'in', depts)
       .where('ct.is_group', '=', 0)
+      .where('ct.is_vip', '=', 0)
       .where('t.status', '=', 'closed')
       .where('t.closed_at', '>=', since)
       .execute();
@@ -168,6 +172,7 @@ export class DashboardController {
       ])
       .where('t.department_id', 'in', depts)
       .where('ct.is_group', '=', 0)
+      .where('ct.is_vip', '=', 0)
       .where((eb) => eb.or([eb('t.opened_at', '>=', prevFrom), eb('t.closed_at', '>=', prevFrom)]))
       .executeTakeFirst();
 

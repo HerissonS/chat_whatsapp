@@ -11,7 +11,13 @@ export interface Me {
   departmentIds: number[];
   mustChangePassword: boolean;
   csrfToken: string;
-  preferences: { theme?: 'light' | 'dark' | 'system'; sound?: boolean; desktopNotifications?: boolean };
+  preferences: {
+    theme?: 'light' | 'dark' | 'system';
+    sound?: boolean;
+    desktopNotifications?: boolean;
+    notificationSound?: import('./sound').SoundId;
+    soundVolume?: number;
+  };
   passwordMinLength: number;
   mediaMaxMb: number;
 }

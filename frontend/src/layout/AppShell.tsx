@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { House, KeyRound, LogOut, MessagesSquare, Monitor, Moon, Settings, Sun, Type } from 'lucide-react';
+import { BellRing, House, KeyRound, LogOut, MessagesSquare, Monitor, Moon, Settings, Sun, Type } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { type ThemePref, useBranding } from '../branding/BrandingProvider';
@@ -10,6 +10,7 @@ import { navigate } from '../lib/router';
 import { getSocket } from '../lib/socket';
 import type { WhatsappStatus } from '../lib/types';
 import { ChangePasswordForm } from '../pages/ChangePasswordPage';
+import { SoundSettingsForm, useSoundPreferences } from './SoundSettings';
 
 const STATE_LABEL: Record<string, string> = {
   open: 'WhatsApp conectado',
@@ -44,6 +45,8 @@ export function AppShell({ section, children }: { section: 'home' | 'chat' | 'ad
   const qc = useQueryClient();
   const [menu, setMenu] = useState(false);
   const [pwd, setPwd] = useState(false);
+  const [soundOpen, setSoundOpen] = useState(false);
+  useSoundPreferences();
   const menuRef = useRef<HTMLDivElement>(null);
   const isAdmin = me?.permissions.some((p) => p.startsWith('admin.'));
   const canHome = can('dashboard.view');
@@ -155,6 +158,9 @@ export function AppShell({ section, children }: { section: 'home' | 'chat' | 'ad
               <button type="button" className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-text/5" onClick={() => { setMenu(false); setPwd(true); }}>
                 <KeyRound className="size-4" /> Trocar senha
               </button>
+              <button type="button" className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-text/5" onClick={() => { setMenu(false); setSoundOpen(true); }}>
+                <BellRing className="size-4" /> Som de notificação
+              </button>
               <button type="button" className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-danger hover:bg-danger/10" onClick={() => void logout()}>
                 <LogOut className="size-4" /> Sair
               </button>
@@ -175,6 +181,9 @@ export function AppShell({ section, children }: { section: 'home' | 'chat' | 'ad
       </div>
       <Modal open={pwd} onClose={() => setPwd(false)} title="Trocar senha" size="sm">
         <ChangePasswordForm onDone={() => setPwd(false)} />
+      </Modal>
+      <Modal open={soundOpen} onClose={() => setSoundOpen(false)} title="Som de notificação" size="sm">
+        {soundOpen && <SoundSettingsForm onDone={() => setSoundOpen(false)} />}
       </Modal>
     </div>
   );

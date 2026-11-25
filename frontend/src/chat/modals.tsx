@@ -10,7 +10,7 @@ import { phoneLabel, subjectPreview } from '../lib/format';
 import { useInboxes } from '../lib/inboxes';
 import { navigate } from '../lib/router';
 import type { ContactEntry, Conversation, Message } from '../lib/types';
-import { useClassifications, useConversations } from './data';
+import { DEFAULT_FILTERS, useClassifications, useConversations } from './data';
 
 /** Modal "Confirme as seguintes informações" do encerramento. */
 export function CloseTicketModal({ open, onClose, conversation }: { open: boolean; onClose: () => void; conversation: Conversation }) {
@@ -131,7 +131,7 @@ export function ForwardModal({ message, onClose }: { message: Message | null; on
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<number[]>([]);
   const [sending, setSending] = useState(false);
-  const { data } = useConversations('everything', q.trim());
+  const { data } = useConversations({ ...DEFAULT_FILTERS, status: 'all' }, q.trim());
   const items = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
 
   useEffect(() => {

@@ -499,7 +499,7 @@ jobs:
       # --- BACKEND ---
       - name: Metadados OCI - backend
         id: meta_backend
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ steps.vars.outputs.repo_lower }}-backend
           tags: |
@@ -524,7 +524,7 @@ jobs:
       # --- FRONTEND ---
       - name: Metadados OCI - frontend
         id: meta_frontend
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ steps.vars.outputs.repo_lower }}-frontend
           tags: |
@@ -549,7 +549,7 @@ jobs:
       # --- BACKUP ---
       - name: Metadados OCI - backup
         id: meta_backup
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ steps.vars.outputs.repo_lower }}-backup
           tags: |

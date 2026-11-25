@@ -14,6 +14,8 @@ secrets/
 *.pfx
 # Ajustes locais do compose (podem ter IPs, portas ou senhas do servidor)
 docker-compose.override.yml
+# Conexão do backend com o banco de equipamentos (específico deste servidor)
+docker-compose.catalogo.yml
 compose.override.yml
 
 # --- Dados (conversas e dados pessoais: LGPD) ---------------------------------

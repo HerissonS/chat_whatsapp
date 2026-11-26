@@ -217,3 +217,15 @@ describe('mensagens fora do padrão (botões, listas, envelopes, ilegíveis)', a
     assert.equal(p({ eventMessage: {} }, 'eventMessage').body, '[Evento]');
   });
 });
+
+describe('edição criptografada (secretEncryptedMessage)', () => {
+  it('não vira mensagem nova: aponta para a mensagem original', () => {
+    const m = parseWaMessage({
+      key: key(),
+      message: { messageContextInfo: {}, secretEncryptedMessage: { targetMessageKey: { id: 'ORIG1' }, encPayload: {}, encIv: {}, secretEncType: 'MESSAGE_EDIT' } },
+      messageType: 'secretEncryptedMessage',
+    });
+    assert.deepEqual(m.secretEdit, { targetId: 'ORIG1', encType: 'MESSAGE_EDIT' });
+    assert.equal(m.body, null);
+  });
+});

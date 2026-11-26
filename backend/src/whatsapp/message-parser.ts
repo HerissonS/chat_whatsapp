@@ -31,10 +31,17 @@ export interface ParsedMessage {
   /** Tipo original informado pela Evolution e campos presentes (só nomes), para diagnóstico de tipos não suportados. */
   rawType: string | null;
   rawKeys: string[];
+  /**
+   * Edição criptografada de uma mensagem anterior (secretEncryptedMessage). A Evolution não decifra
+   * o novo texto; o sistema só marca a mensagem original como editada, sem criar mensagem nova.
+   */
+  secretEdit: { targetId: string | null; encType: string } | null;
 }
 
 /** Texto gravado quando a mensagem chega sem conteúdo (o WhatsApp Web não conseguiu decifrá-la). */
 export const UNREADABLE_BODY = '[Mensagem não recebida pelo WhatsApp Web. Veja no celular.]';
+/** Texto das mensagens antigas que eram, na verdade, edições criptografadas (ver diagnose-messages). */
+export const SECRET_EDIT_BODY = '[Mensagem anterior editada no celular. Veja o novo texto no celular.]';
 /** Texto gravado para tipos que o sistema ainda não interpreta. */
 export const UNSUPPORTED_BODY = '[Tipo de mensagem não suportado. Veja no celular.]';
 
@@ -231,6 +238,7 @@ export function parseWaMessage(raw: AnyObj): ParsedMessage | null {
     media: null,
     rawType: (raw.messageType as string | undefined) ?? null,
     rawKeys: Object.keys(m).slice(0, 10),
+    secretEdit: null,
   };
 
   if (m.reactionMessage?.key?.id) {
@@ -240,6 +248,17 @@ export function parseWaMessage(raw: AnyObj): ParsedMessage | null {
       body: null,
       quoted: null,
       reaction: { targetId: String(m.reactionMessage.key.id), emoji: String(m.reactionMessage.text ?? '') },
+    };
+  }
+
+  if (m.secretEncryptedMessage) {
+    const se = m.secretEncryptedMessage as AnyObj;
+    return {
+      ...base,
+      type: 'unknown',
+      body: null,
+      quoted: null,
+      secretEdit: { targetId: se.targetMessageKey?.id ? String(se.targetMessageKey.id) : null, encType: String(se.secretEncType ?? 'UNKNOWN') },
     };
   }
 

@@ -4,6 +4,9 @@
 FROM postgres:18.7-alpine@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
 # Correções de segurança do Alpine + cliente MariaDB. O gosu não é usado (o container roda com usuário fixo).
 # Alpine remove versões antigas de pacotes ao publicar patches de segurança.
+# A pipeline passa a data do build: muda a cada dia e força o apk upgrade abaixo a rodar de novo,
+# em vez de reaproveitar a camada em cache (que ficaria com pacotes desatualizados).
+ARG APK_REFRESH=local
 # hadolint ignore=DL3018
 RUN apk upgrade --no-cache && apk add --no-cache mariadb-client tzdata && rm -f /usr/local/bin/gosu
 COPY --chmod=0755 backup.sh /usr/local/bin/backup.sh

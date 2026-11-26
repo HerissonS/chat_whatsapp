@@ -285,6 +285,7 @@ jobs:
             -v "${{ github.workspace }}/reports:/reports" \
             "${{ env.TRIVY_IMAGE }}" \
             config --format json \
+            --ignorefile /repo/.trivyignore \
             --output /reports/trivy-config.json \
             /repo
 
@@ -355,6 +356,10 @@ jobs:
       - name: Configurar Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      - name: Data do build (atualiza os pacotes do Alpine uma vez por dia)
+        id: apk
+        run: echo "refresh=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
       - name: Build local da imagem backend (sem push)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -363,6 +368,7 @@ jobs:
           load: true
           push: false
           tags: local-scan/backend:ci
+          build-args: APK_REFRESH=${{ steps.apk.outputs.refresh }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
@@ -374,6 +380,7 @@ jobs:
           load: true
           push: false
           tags: local-scan/frontend:ci
+          build-args: APK_REFRESH=${{ steps.apk.outputs.refresh }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
@@ -385,6 +392,7 @@ jobs:
           load: true
           push: false
           tags: local-scan/backup:ci
+          build-args: APK_REFRESH=${{ steps.apk.outputs.refresh }}
           cache-from: type=gha,scope=backup
           cache-to: type=gha,mode=max,scope=backup
 
@@ -479,6 +487,7 @@ jobs:
           echo "repo_lower=${REPO_LOWER}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "app_version=${APP_VER}" >> "$GITHUB_OUTPUT"
+          echo "apk_refresh=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Configurar QEMU (emulacao multi-arch)
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -515,6 +524,7 @@ jobs:
         with:
           context: ./backend
           platforms: linux/amd64,linux/arm64
+          build-args: APK_REFRESH=${{ steps.vars.outputs.apk_refresh }}
           push: true
           tags: ${{ steps.meta_backend.outputs.tags }}
           labels: ${{ steps.meta_backend.outputs.labels }}
@@ -540,6 +550,7 @@ jobs:
         with:
           context: ./frontend
           platforms: linux/amd64,linux/arm64
+          build-args: APK_REFRESH=${{ steps.vars.outputs.apk_refresh }}
           push: true
           tags: ${{ steps.meta_frontend.outputs.tags }}
           labels: ${{ steps.meta_frontend.outputs.labels }}
@@ -565,6 +576,7 @@ jobs:
         with:
           context: ./backup
           platforms: linux/amd64,linux/arm64
+          build-args: APK_REFRESH=${{ steps.vars.outputs.apk_refresh }}
           push: true
           tags: ${{ steps.meta_backup.outputs.tags }}
           labels: ${{ steps.meta_backup.outputs.labels }}

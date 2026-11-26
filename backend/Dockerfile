@@ -16,6 +16,9 @@ ENV NODE_ENV=production \
     NODE_OPTIONS=--enable-source-maps
 # Remove gerenciadores de pacote da imagem final (menos superfície de ataque).
 # Fonte com acentuação para o PDF do atendimento. Alpine remove versões antigas ao publicar patches.
+# A pipeline passa a data do build: muda a cada dia e força o apk upgrade abaixo a rodar de novo,
+# em vez de reaproveitar a camada em cache (que ficaria com pacotes desatualizados).
+ARG APK_REFRESH=local
 # hadolint ignore=DL3018
 RUN apk upgrade --no-cache && apk add --no-cache font-dejavu \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \

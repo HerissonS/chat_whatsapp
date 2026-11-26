@@ -12,6 +12,9 @@ RUN npm run build
 FROM nginxinc/nginx-unprivileged:1.31.7-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e AS runtime
 # Correções de segurança dos pacotes do Alpine publicadas depois da imagem base; curl não é usado.
 USER root
+# A pipeline passa a data do build: muda a cada dia e força o apk upgrade abaixo a rodar de novo,
+# em vez de reaproveitar a camada em cache (que ficaria com pacotes desatualizados).
+ARG APK_REFRESH=local
 RUN apk upgrade --no-cache && apk del --no-cache curl
 USER 101
 LABEL org.opencontainers.image.title="chat-whatsapp-frontend" \

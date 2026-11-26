@@ -74,6 +74,7 @@ scripts/diagnose-messages.sh --fix        # regrava as que a versão atual já i
 | Resultado | Significado |
 |---|---|
 | `unknown [messageContextInfo] → sem conteúdo` | A mensagem chegou sem conteúdo: o WhatsApp Web (Evolution) não conseguiu decifrá-la. Ela existe só no celular. Costuma acontecer na primeira mensagem de um contato ou após reinstalação do WhatsApp dele. Se o WhatsApp reenviar depois, o sistema completa a mensagem sozinho |
+| `secretEncryptedMessage → edição de mensagem anterior` | Não é mensagem nova: o contato **editou** uma mensagem já enviada. O WhatsApp manda a edição criptografada e a Evolution não decifra o novo texto. A versão atual não cria balão nem chamado: marca a mensagem original como *editada* (o texto novo fica só no celular). `--fix` corrige as antigas |
 | `→ legível: text` | Tipo que a versão atual já interpreta (botões, listas, mensagens de empresas e robôs). Use `--fix` para regravar |
 | `→ ainda não suportada` | Tipo novo. Envie o resumo (tipo e campos) para análise; não contém dados da conversa |
 | `evento bruto já removido` | Mais antigo que `WEBHOOK_RETENTION_DAYS`; não é possível diagnosticar |

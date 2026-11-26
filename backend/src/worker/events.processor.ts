@@ -116,6 +116,7 @@ export class EventsProcessor {
     const msg = parseWaMessage(raw);
     if (!msg) return;
     if (msg.reaction) return this.onReaction(msg, dept);
+    if (msg.secretEdit) return this.onSecretEdit(msg.secretEdit, dept);
 
     if (msg.type === 'unknown') {
       // Só nomes de campos e o tipo informado pela Evolution: nunca o conteúdo.
@@ -298,6 +299,15 @@ export class EventsProcessor {
     const id = await this.chat.messageIdByWaId(dept.id, waId);
     if (!id) return;
     await this.chat.db.updateTable('messages').set({ deleted: 1 }).where('id', '=', id).execute();
+    await this.events.message(dept.id, id);
+  }
+
+  /** Edição criptografada: o novo texto não vem legível; marca a original como editada (o texto atualizado fica só no celular). */
+  private async onSecretEdit(edit: NonNullable<ParsedMessage['secretEdit']>, dept: Dept): Promise<void> {
+    const id = edit.targetId ? await this.chat.messageIdByWaId(dept.id, edit.targetId) : null;
+    this.logger.info({ target_found: !!id, enc_type: edit.encType }, 'edição criptografada recebida (texto novo só no celular)');
+    if (!id) return;
+    await this.chat.db.updateTable('messages').set({ edited: 1 }).where('id', '=', id).execute();
     await this.events.message(dept.id, id);
   }
 

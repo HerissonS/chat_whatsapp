@@ -1,6 +1,6 @@
 import { loadConfig } from '../config/env.js';
 import { createDb } from '../database/create-db.js';
-import { parseWaMessage, UNREADABLE_BODY } from '../whatsapp/message-parser.js';
+import { parseWaMessage, SECRET_EDIT_BODY, UNREADABLE_BODY } from '../whatsapp/message-parser.js';
 
 /**
  * Diagnóstico das mensagens gravadas como "não suportadas" ou ilegíveis.
@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   try {
     const rows = await db
       .selectFrom('messages')
-      .select(['id', 'wa_id', 'origin', 'body', 'wa_timestamp'])
+      .select(['id', 'department_id', 'wa_id', 'origin', 'body', 'wa_timestamp'])
       .where('type', '=', 'unknown')
       .where('body', 'is not', null)
       .where('wa_timestamp', '>=', new Date(Date.now() - days * 86_400_000))
@@ -54,11 +54,26 @@ async function main(): Promise<void> {
         continue;
       }
       const m = parseWaMessage(ev);
-      const now = !m ? 'ignorada (controle)' : m.type !== 'unknown' ? `legível: ${m.type}` : m.body === UNREADABLE_BODY ? 'sem conteúdo (não decifrada)' : 'ainda não suportada';
+      const now = !m
+        ? 'ignorada (controle)'
+        : m.secretEdit
+          ? `edição de mensagem anterior (${m.secretEdit.encType})`
+          : m.type !== 'unknown' ? `legível: ${m.type}` : m.body === UNREADABLE_BODY ? 'sem conteúdo (não decifrada)' : 'ainda não suportada';
       const k = `${m?.rawType ?? '?'} [${m?.rawKeys.join(', ') ?? ''}] → ${now}`;
       summary.set(k, (summary.get(k) ?? 0) + 1);
       console.log(`${r.id}\t${r.wa_timestamp.toISOString()}\t${r.origin}\t${m?.rawType ?? '?'}\t${m?.rawKeys.join(',') ?? ''}\t${now}`);
       // Texto agora legível, ou aviso mais claro para as que continuam sem conteúdo. Mídias ficam de fora (exigiriam novo download).
+      if (fix && m?.secretEdit) {
+        // Não era mensagem nova: vira aviso e a original é marcada como editada.
+        if (r.body !== SECRET_EDIT_BODY) {
+          await db.updateTable('messages').set({ body: SECRET_EDIT_BODY }).where('id', '=', r.id).where('type', '=', 'unknown').execute();
+          fixed++;
+        }
+        if (m.secretEdit.targetId) {
+          await db.updateTable('messages').set({ edited: 1 }).where('wa_id', '=', m.secretEdit.targetId).where('department_id', '=', r.department_id).execute();
+        }
+        continue;
+      }
       if (fix && m && !m.media && !m.reaction && (m.type !== 'unknown' || m.body !== r.body)) {
         await db.updateTable('messages').set({ type: m.type, body: m.body }).where('id', '=', r.id).where('type', '=', 'unknown').execute();
         fixed++;

@@ -33,7 +33,7 @@
 |---|---|
 | Versão e digest fixos | Todas as imagens base (`tag@sha256:...`) |
 | Alpine | Todas, exceto o MariaDB (a imagem oficial não tem variante Alpine) |
-| Atualizações de segurança | `apk upgrade` nas imagens próprias construídas (`backend`, `frontend`, `backup`) |
+| Atualizações de segurança | `apk upgrade` nas imagens próprias construídas (`backend`, `frontend`, `backup`). A pipeline passa a data do build (`APK_REFRESH`), o que força essa etapa a rodar de novo a cada dia em vez de reaproveitar o cache |
 | Testes no build | A imagem do backend só é gerada se os testes passarem |
 | Contexto de build mínimo | Cada `.dockerignore` bloqueia tudo e libera só os arquivos usados no build; o `.env` (na raiz) nunca entra em nenhuma imagem |
 | Usuário não root | backend e worker (`node`), frontend (`nginx`), backup (`1000:1000`), Redis, MariaDB, PostgreSQL |
@@ -129,6 +129,7 @@ Todas as pipelines operam com `permissions: {}` no nível global (menor privilé
 
 - **CI/CD & Supply Chain (`.github/workflows/devsecops-pipeline.yml`):** em PRs para `dev` e `main` e merges na `main`, executa em cadeia: Gitleaks (árvore atual e commits do PR) + testes unitários → Semgrep (SAST) → Trivy FS + CycloneDX (SCA & SBOM) → Trivy Config + Hadolint (Misconfiguration) → Build & Trivy Image + SBOM. No merge na `main`, constrói e publica as 3 imagens próprias (`backend`, `frontend`, `backup`) em multi-arquitetura (`linux/amd64`, `linux/arm64`) no GHCR com tag baseada em SHA, assina com **Cosign keyless (Sigstore OIDC)** pelo digest `@sha256`, atesta o SBOM CycloneDX e valida com `cosign verify`. O comentário consolidado só é publicado em PRs do próprio repositório; em PRs do Dependabot e de forks (token somente leitura), o relatório fica no Job Summary.
 - **Auditoria Diária (`.github/workflows/daily-security-audit.yml`):** roda diariamente verificando novas CVEs em dependências e imagens (GHCR e terceiros), pacotes `npm` desatualizados e novos digests `@sha256` (compose, Dockerfiles, scripts e workflows), abrindo/atualizando automaticamente uma única Issue consolidada (`security-audit`).
+- **Exceções do Trivy (`.trivyignore`):** só `DS-0026` (HEALTHCHECK no Dockerfile), porque a verificação de saúde é feita por serviço no docker-compose. Cada exceção fica justificada no arquivo.
 - **Dependabot (`.github/dependabot.yml`):** abre PRs semanais para `npm`, `docker` (Dockerfiles), `docker-compose` e `github-actions` direcionados à branch `dev`. No compose, ignora versões *major* de PostgreSQL e MariaDB (exigem migração de dados) e aceita só *patch* da Evolution.
 
 ## Recomendações para produção

@@ -157,7 +157,7 @@ docker compose -f docker-compose.prod.yml up -d
 ## Atualizar o sistema
 
 ```sh
-docker compose build
+docker compose build --build-arg APK_REFRESH=$(date +%F)   # a data força a atualização dos pacotes do Alpine
 docker compose up -d
 ```
 

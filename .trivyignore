@@ -1,0 +1,6 @@
+# Exceções justificadas do Trivy (usado só na varredura de configuração da pipeline).
+
+# DS-0026 (No HEALTHCHECK defined): a verificação de saúde fica no docker-compose, por serviço.
+# A imagem do backend também roda o worker, que precisa de verificação diferente; um HEALTHCHECK
+# no Dockerfile valeria para os dois. Backup é um agendador sem porta (não tem o que verificar).
+DS-0026

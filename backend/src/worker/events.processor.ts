@@ -20,6 +20,7 @@ import {
   parseWaMessage,
   type ParsedMessage,
   previewOf,
+  UNREADABLE_BODY,
 } from '../whatsapp/message-parser.js';
 
 type AnyObj = Record<string, any>;
@@ -116,8 +117,20 @@ export class EventsProcessor {
     if (!msg) return;
     if (msg.reaction) return this.onReaction(msg, dept);
 
+    if (msg.type === 'unknown') {
+      // Só nomes de campos e o tipo informado pela Evolution: nunca o conteúdo.
+      this.logger.warn(
+        { wa_id: msg.waId, message_type: msg.rawType, message_keys: msg.rawKeys, from_me: msg.fromMe, unreadable: msg.body === UNREADABLE_BODY },
+        msg.body === UNREADABLE_BODY ? 'mensagem recebida sem conteúdo (não decifrada pelo WhatsApp Web)' : 'tipo de mensagem não suportado',
+      );
+    }
+
     const existing = await this.chat.messageIdByWaId(dept.id, msg.waId);
-    if (existing) return;
+    if (existing) {
+      // O WhatsApp pode reenviar depois, já com conteúdo, uma mensagem que chegou ilegível: completa o registro.
+      if (msg.type !== 'unknown') await this.fillUnknown(existing, msg, raw, dept);
+      return;
+    }
 
     if (msg.fromMe && (await this.waitForSystemSend(dept.id, msg))) return;
 
@@ -189,6 +202,35 @@ export class EventsProcessor {
     await this.events.message(dept.id, messageId);
     await this.events.conversation(dept.id, conversationId);
     await this.bot.run(action, { departmentId: dept.id, conversationId, ticketId });
+  }
+
+  /** Completa uma mensagem gravada como desconhecida quando o conteúdo chega depois. */
+  private async fillUnknown(messageId: number, msg: ParsedMessage, raw: AnyObj, dept: Dept): Promise<void> {
+    const r = await this.chat.db
+      .updateTable('messages')
+      .set({
+        type: msg.type,
+        body: msg.body,
+        media_status: msg.media ? 'pending' : null,
+        media_mime: msg.media?.mime ?? null,
+        media_name: msg.media?.name ?? null,
+        media_size: msg.media?.size ?? null,
+        quoted_wa_id: msg.quoted?.waId ?? null,
+        quoted_preview: msg.quoted?.preview ?? null,
+        quoted_sender: msg.quoted?.sender ?? null,
+      })
+      .where('id', '=', messageId)
+      .where('type', '=', 'unknown')
+      .where('media_id', 'is', null)
+      .executeTakeFirst();
+    if (!Number(r.numUpdatedRows ?? 0)) return;
+    const row = await this.chat.db.selectFrom('messages').select('conversation_id').where('id', '=', messageId).executeTakeFirstOrThrow();
+    this.logger.info({ message_id: messageId, type: msg.type }, 'conteúdo de mensagem recebida sem conteúdo foi completado');
+    if (msg.media) {
+      await this.queues.media.add('download', { messageId, instance: dept.evolution_instance!, raw: { key: raw.key, message: raw.message } });
+    }
+    await this.events.message(dept.id, messageId);
+    await this.events.conversation(dept.id, row.conversation_id);
   }
 
   /**

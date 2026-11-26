@@ -28,6 +28,8 @@ const closeSchema = z.object({
   contract: cleanText(255).pipe(z.string().min(1, 'informe o contrato')),
   equipment: cleanText(100).nullable().optional(),
   classificationId: z.number().int().positive(),
+  /** Marcado no encerramento quando o e-mail desse chamado não deve ser enviado. */
+  skipEmail: z.boolean().default(false),
 });
 
 @Controller('tickets')
@@ -51,7 +53,7 @@ export class TicketsController {
       .selectFrom('tickets as t')
       .innerJoin('conversations as cv', 'cv.id', 't.conversation_id')
       .innerJoin('contacts as ct', 'ct.id', 'cv.contact_id')
-      .select(['t.id', 't.department_id', 't.conversation_id', 't.status', 't.assignee_id', 'ct.is_group'])
+      .select(['t.id', 't.department_id', 't.conversation_id', 't.status', 't.assignee_id', 'ct.is_group', 'ct.is_vip'])
       .where('t.id', '=', id)
       .executeTakeFirst();
     if (!t || !user.departmentIds.includes(t.department_id)) throw new NotFoundException('Chamado não encontrado.');
@@ -103,11 +105,12 @@ export class TicketsController {
       actorId: user.id,
     });
     if (!closed) throw new BadRequestException('Chamado já encerrado.');
-    await this.audit.log({ action: 'ticket.closed', user, ip: clientIp(req), targetType: 'ticket', targetId: t.id, details: { contract: data.contract, equipment: data.equipment ?? null } });
+    await this.audit.log({ action: 'ticket.closed', user, ip: clientIp(req), targetType: 'ticket', targetId: t.id, details: { contract: data.contract, equipment: data.equipment ?? null, skipEmail: data.skipEmail } });
 
     // Mensagem de encerramento ao contato (configurável por setor; padrão: só conversas individuais).
+    // Contatos VIP não recebem a mensagem automática, assim como não recebem o menu.
     const dept = await this.chat.department(t.department_id);
-    const sendClosing = toBool(t.is_group) ? toBool(dept.close_msg_group) : toBool(dept.close_msg_individual);
+    const sendClosing = toBool(t.is_vip) ? false : toBool(t.is_group) ? toBool(dept.close_msg_group) : toBool(dept.close_msg_individual);
     if (sendClosing) {
       try {
         await this.bot.sendClosing({ departmentId: t.department_id, conversationId: t.conversation_id, ticketId: t.id });
@@ -116,7 +119,12 @@ export class TicketsController {
       }
     }
 
-    await this.enqueueEmail(t.id, t.department_id);
+    if (data.skipEmail) {
+      // O e-mail pode ser enviado depois pelo painel do contato ("Enviar e-mail").
+      await this.chat.db.updateTable('tickets').set({ email_status: 'skipped' }).where('id', '=', t.id).execute();
+    } else {
+      await this.enqueueEmail(t.id, t.department_id);
+    }
     await this.events.conversation(t.department_id, t.conversation_id);
     return this.chat.conversationSummary(t.conversation_id);
   }

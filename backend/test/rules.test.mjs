@@ -184,3 +184,36 @@ describe('horário de funcionamento (indicadores)', async () => {
     assert.deepEqual(parseBusinessHours(JSON.stringify(hours)), hours);
   });
 });
+
+describe('mensagens fora do padrão (botões, listas, envelopes, ilegíveis)', async () => {
+  const { UNREADABLE_BODY, UNSUPPORTED_BODY } = await import('../dist/whatsapp/message-parser.js');
+  const p = (message, messageType) => parseWaMessage({ key: key(), message, messageType, messageTimestamp: 1795100000 });
+
+  it('mensagem sem conteúdo (não decifrada) vira aviso claro', () => {
+    const m = p({ messageContextInfo: { deviceListMetadataVersion: 2 } }, 'unknown');
+    assert.equal(m.type, 'unknown');
+    assert.equal(m.body, UNREADABLE_BODY);
+    assert.deepEqual(m.rawKeys, ['messageContextInfo']);
+  });
+  it('resposta de botão e de lista viram texto', () => {
+    assert.equal(p({ buttonsResponseMessage: { selectedDisplayText: 'Sim', selectedButtonId: 'Sim' } }, 'buttonsResponseMessage').body, 'Sim');
+    const l = p({ listResponseMessage: { title: 'Suporte', singleSelectReply: { selectedRowId: 'op1' } } }, 'listResponseMessage');
+    assert.equal(l.type, 'text');
+    assert.equal(l.body, 'Suporte\nop1');
+  });
+  it('mensagem de empresa com botões mostra o texto e os botões', () => {
+    const m = p({ interactiveMessage: { body: { text: 'Seu pedido saiu' }, nativeFlowMessage: { buttons: [{ name: 'cta_url', buttonParamsJson: '{"display_text":"Rastrear"}' }] } } }, 'interactiveMessage');
+    assert.equal(m.type, 'text');
+    assert.equal(m.body, 'Seu pedido saiu\n[Rastrear]');
+    const t = p({ templateMessage: { hydratedTemplate: { hydratedContentText: 'Alerta: usina offline', hydratedButtons: [{ quickReplyButton: { displayText: 'OK' } }] } } }, 'templateMessage');
+    assert.equal(t.body, 'Alerta: usina offline\n[OK]');
+  });
+  it('desembrulha envelopes (futureProof) e ignora edição dentro de envelope', () => {
+    assert.equal(p({ futureProofMessage: { message: { conversation: 'oi' } } }, 'futureProofMessage').body, 'oi');
+    assert.equal(p({ editedMessage: { message: { protocolMessage: { type: 14 } } } }, 'editedMessage'), null);
+  });
+  it('tipo realmente desconhecido avisa para ver no celular', () => {
+    assert.equal(p({ algoNovoMessage: { x: 1 } }, 'algoNovoMessage').body, UNSUPPORTED_BODY);
+    assert.equal(p({ eventMessage: {} }, 'eventMessage').body, '[Evento]');
+  });
+});

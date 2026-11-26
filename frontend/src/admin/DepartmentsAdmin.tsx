@@ -179,7 +179,7 @@ export function DepartmentsAdmin() {
             <div className="divide-y divide-border/40 rounded-app border border-border/40 px-4">
               <SwitchRow label="Nome do atendente nas mensagens" description="O técnico recebe *Nome:* antes do texto." checked={form.agentNamePrefix} onChange={(v) => setForm({ ...form, agentNamePrefix: v })} />
               <SwitchRow label="Menu automático" description="Envia o menu de classificação no primeiro contato (exceto VIP e grupos)." checked={form.menuEnabled} onChange={(v) => setForm({ ...form, menuEnabled: v })} />
-              <SwitchRow label="Mensagem de encerramento (conversas individuais)" checked={form.closeMsgIndividual} onChange={(v) => setForm({ ...form, closeMsgIndividual: v })} />
+              <SwitchRow label="Mensagem de encerramento (conversas individuais)" description="Contatos VIP nunca recebem." checked={form.closeMsgIndividual} onChange={(v) => setForm({ ...form, closeMsgIndividual: v })} />
               <SwitchRow label="Mensagem de encerramento (grupos)" checked={form.closeMsgGroup} onChange={(v) => setForm({ ...form, closeMsgGroup: v })} />
               <SwitchRow
                 label="Caixa de entrada ativa"

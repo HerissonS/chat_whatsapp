@@ -48,8 +48,8 @@ Erros seguem o formato `{ "statusCode": 400, "message": "..." }`. Erros de valid
 | Método | Rota | Permissão | Descrição |
 |---|---|---|---|
 | POST | `/tickets/:id/assign` | ticket.assign | `{ userId \| null }` |
-| POST | `/tickets/:id/close` | ticket.close | `{ contract, equipment?, classificationId }` |
-| POST | `/tickets/:id/resend-email` | ticket.close | Reenfileira o e-mail |
+| POST | `/tickets/:id/close` | ticket.close | `{ contract, equipment?, classificationId, skipEmail? }` (`skipEmail: true` encerra sem e-mail; status `skipped`) |
+| POST | `/tickets/:id/resend-email` | ticket.close | Envia ou reenvia o e-mail (falhou ou encerrado sem e-mail) |
 | GET | `/tickets/:id/pdf` | chat.read | PDF do histórico |
 | GET | `/catalog/contracts?departmentId=` | ticket.close | Contratos (catálogo + extras) |
 | GET | `/catalog/equipments?departmentId=&contract=` | ticket.close | Equipamentos ativos do contrato |

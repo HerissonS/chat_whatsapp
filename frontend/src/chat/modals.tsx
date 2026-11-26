@@ -21,6 +21,7 @@ export function CloseTicketModal({ open, onClose, conversation }: { open: boolea
   const [contract, setContract] = useState<string | null>(null);
   const [equipment, setEquipment] = useState<string | null>(null);
   const [classificationId, setClassificationId] = useState<number | null>(null);
+  const [skipEmail, setSkipEmail] = useState(false);
   const [saving, setSaving] = useState(false);
   const { data: classes } = useClassifications(dep);
 
@@ -41,6 +42,7 @@ export function CloseTicketModal({ open, onClose, conversation }: { open: boolea
     if (open) {
       setContract(null);
       setEquipment(null);
+      setSkipEmail(false);
       setClassificationId(ticket.classificationId ?? classes?.find((c) => c.isDefault)?.id ?? null);
     }
   }, [open, ticket.classificationId, classes]);
@@ -52,8 +54,8 @@ export function CloseTicketModal({ open, onClose, conversation }: { open: boolea
     if (!contract || !classificationId) return;
     setSaving(true);
     try {
-      await api.post(`tickets/${ticket.id}/close`, { contract, equipment, classificationId });
-      toast.success('Atendimento encerrado. O e-mail será enviado em instantes.');
+      await api.post(`tickets/${ticket.id}/close`, { contract, equipment, classificationId, skipEmail });
+      toast.success(skipEmail ? 'Atendimento encerrado, sem envio de e-mail.' : 'Atendimento encerrado. O e-mail será enviado em instantes.');
       void qc.invalidateQueries({ queryKey: ['conversation', conversation.id] });
       void qc.invalidateQueries({ queryKey: ['conversations'] });
       void qc.invalidateQueries({ queryKey: ['conversation-counts'] });
@@ -116,11 +118,18 @@ export function CloseTicketModal({ open, onClose, conversation }: { open: boolea
             ))}
           </Select>
         </Field>
-        <div className="rounded-app border border-border/50 bg-background p-3">
+        <div className={cx('rounded-app border border-border/50 bg-background p-3 transition-opacity', skipEmail && 'opacity-50')}>
           <div className="text-xs font-medium tracking-wide text-muted uppercase">Assunto do e-mail</div>
-          <div className="mt-1 font-mono text-sm break-all text-text">{subject}</div>
+          <div className={cx('mt-1 font-mono text-sm break-all text-text', skipEmail && 'line-through')}>{subject}</div>
           <div className="mt-2 text-xs text-muted">O e-mail leva o histórico deste atendimento em PDF anexo.</div>
         </div>
+        <label className="flex items-start gap-3 rounded-app border border-border/50 p-3">
+          <input type="checkbox" checked={skipEmail} onChange={(e) => setSkipEmail(e.target.checked)} className="mt-0.5 size-4 accent-[var(--color-danger)]" />
+          <span>
+            <span className="block text-sm font-medium text-text">Não enviar o e-mail deste encerramento</span>
+            <span className="block text-xs text-muted">Se precisar depois, envie pelo painel do contato, em Chamados anteriores.</span>
+          </span>
+        </label>
       </div>
     </Modal>
   );

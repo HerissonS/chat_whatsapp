@@ -15,6 +15,7 @@ const EMAIL: Record<string, { label: string; tone: 'success' | 'warning' | 'dang
   sending: { label: 'Enviando e-mail', tone: 'warning' },
   retrying: { label: 'E-mail: nova tentativa', tone: 'warning' },
   failed: { label: 'E-mail falhou', tone: 'danger' },
+  skipped: { label: 'E-mail não enviado (opção do encerramento)', tone: 'neutral' },
 };
 
 export function ContactPanel({ conversation, history }: { conversation: Conversation; history: TicketHistoryItem[] }) {
@@ -36,7 +37,7 @@ export function ContactPanel({ conversation, history }: { conversation: Conversa
       await api.patch(`contacts/${c.id}`, patch);
       void qc.invalidateQueries({ queryKey: ['conversation', conversation.id] });
       void qc.invalidateQueries({ queryKey: ['conversations'] });
-      if (patch.isVip !== undefined) toast.success(patch.isVip ? 'Contato marcado como VIP: não recebe o menu.' : 'Contato não é mais VIP.');
+      if (patch.isVip !== undefined) toast.success(patch.isVip ? 'Contato marcado como VIP: não recebe o menu nem a mensagem de encerramento.' : 'Contato não é mais VIP.');
     } catch (err) {
       toast.error(err);
     }
@@ -92,7 +93,7 @@ export function ContactPanel({ conversation, history }: { conversation: Conversa
             <div className="flex items-center gap-1.5 text-sm font-medium text-text">
               <Star className={cx('size-4', c.isVip ? 'fill-warning text-warning' : 'text-muted')} /> Contato VIP
             </div>
-            <div className="text-xs text-muted">Não recebe o menu automático.</div>
+            <div className="text-xs text-muted">Não recebe o menu nem a mensagem de encerramento, e fica fora dos indicadores do Início.</div>
           </div>
           <Switch checked={c.isVip} onChange={(v) => void save({ isVip: v })} label="Contato VIP" disabled={!can('contact.edit')} />
         </div>
@@ -134,9 +135,9 @@ export function ContactPanel({ conversation, history }: { conversation: Conversa
                         <Mail className="size-3" /> {email.label}
                       </Badge>
                     )}
-                    {(t.email_status === 'failed' || t.email_status === 'retrying') && can('ticket.close') && (
+                    {(t.email_status === 'failed' || t.email_status === 'retrying' || t.email_status === 'skipped') && can('ticket.close') && (
                       <button type="button" onClick={() => void resend(t.id)} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                        <RotateCw className="size-3" /> Reenviar
+                        <RotateCw className="size-3" /> {t.email_status === 'skipped' ? 'Enviar e-mail' : 'Reenviar'}
                       </button>
                     )}
                   </div>

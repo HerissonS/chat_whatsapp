@@ -15,6 +15,8 @@ O `/api/health/ready` responde `200` quando banco, Redis e Evolution estão resp
 
 Os logs são JSON estruturado (um evento por linha), com rotação automática (5 arquivos de 10 MB por container).
 
+Em produção, use `docker compose -f docker-compose.prod.yml` no lugar de `docker compose` em todos os comandos.
+
 ```sh
 docker compose logs -f backend worker     # acompanhar API e worker
 docker compose logs --since 1h backend    # última hora
@@ -33,6 +35,7 @@ Campos principais: `time` (UTC), `level`, `service` (`api`, `worker`, `migrate`,
 | Mensagem do técnico não apareceu | `docker compose logs --since 30m worker \| grep -E 'mensagem recebida\|falhou'` |
 | Bot não respondeu | `docker compose logs worker \| grep '"context":"Bot"'` |
 | E-mail não chegou | `docker compose logs worker \| grep EmailOutbox` (o erro do SMTP aparece em `err`) |
+| Mensagem "não suportada" ou "não recebida pelo WhatsApp Web" | `docker compose logs --since 24h worker \| grep -E 'não suportado\|sem conteúdo'` (mostra `message_type` e `message_keys`, sem o conteúdo) ou `scripts/diagnose-messages.sh` (ver abaixo) |
 | Erro na Evolution | `docker compose logs evolution --since 1h` e `docker compose logs backend \| grep '"context":"Evolution"'` |
 | Quem fez uma ação | Administração > Auditoria |
 
@@ -57,6 +60,25 @@ Os eventos recebidos da Evolution ficam na tabela `webhook_events` por `WEBHOOK_
 scripts/reprocess-events.sh            # últimas 24 horas
 scripts/reprocess-events.sh --hours 72
 ```
+
+### Mensagens não suportadas ou ilegíveis
+
+Quando uma mensagem aparece como **[Mensagem não recebida pelo WhatsApp Web. Veja no celular.]** ou **[Tipo de mensagem não suportado. Veja no celular.]**, o diagnóstico mostra o motivo usando os eventos brutos guardados (só tipo e nomes dos campos, nunca o conteúdo):
+
+```sh
+scripts/diagnose-messages.sh              # últimos 30 dias (somente leitura)
+scripts/diagnose-messages.sh --days 7
+scripts/diagnose-messages.sh --fix        # regrava as que a versão atual já interpreta
+```
+
+| Resultado | Significado |
+|---|---|
+| `unknown [messageContextInfo] → sem conteúdo` | A mensagem chegou sem conteúdo: o WhatsApp Web (Evolution) não conseguiu decifrá-la. Ela existe só no celular. Costuma acontecer na primeira mensagem de um contato ou após reinstalação do WhatsApp dele. Se o WhatsApp reenviar depois, o sistema completa a mensagem sozinho |
+| `→ legível: text` | Tipo que a versão atual já interpreta (botões, listas, mensagens de empresas e robôs). Use `--fix` para regravar |
+| `→ ainda não suportada` | Tipo novo. Envie o resumo (tipo e campos) para análise; não contém dados da conversa |
+| `evento bruto já removido` | Mais antigo que `WEBHOOK_RETENTION_DAYS`; não é possível diagnosticar |
+
+Mensagens sem conteúdo frequentes para o mesmo número podem indicar sessão instável: em Administração > WhatsApp, use **Reiniciar** na caixa de entrada. Se persistir, desconecte e leia o QR Code de novo.
 
 ## Segurança periódica
 

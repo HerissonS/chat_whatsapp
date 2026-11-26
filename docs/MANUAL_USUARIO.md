@@ -84,16 +84,18 @@ Cada **caixa de entrada** tem o seu próprio número de WhatsApp, menu do bot, t
   1. Clique em **Encerrar** e informe o **Contrato** (obrigatório). Digite para pesquisar.
   2. Escolha o **Equipamento** (opcional): só aparecem os equipamentos do contrato escolhido, e dá para pesquisar pelo código.
   3. Confira a **Classificação** e o assunto do e-mail.
-  4. Clique em **Confirmar encerramento**.
+  4. Se o e-mail deste chamado **não** deve ser enviado, marque **Não enviar o e-mail deste encerramento** (vem desmarcada; dá para enviar depois pelo painel do contato).
+  5. Clique em **Confirmar encerramento**.
 - **Depois de encerrar:**
-  - o técnico recebe a mensagem de encerramento;
+  - o técnico recebe a mensagem de encerramento (contatos VIP não recebem);
   - o e-mail com o PDF da conversa é enviado aos destinatários configurados;
   - a próxima mensagem do técnico abre um novo chamado, com o menu.
 
 ### Painel do contato (lado direito)
 - **Editar o nome** pelo lápis. O nome do WhatsApp continua visível abaixo.
-- **Contato VIP:** não recebe o menu automático.
-- **Chamados anteriores:** baixe o PDF de cada um e acompanhe o envio do e-mail. Se falhou, use **Reenviar**.
+- **Contato VIP:** não recebe o menu automático nem a mensagem de encerramento, e fica fora dos indicadores do Início.
+- **Chamados anteriores:** baixe o PDF de cada um e acompanhe o envio do e-mail. Se falhou, use **Reenviar**; se foi encerrado sem e-mail, use **Enviar e-mail**.
+- **Mensagens que só aparecem no celular:** às vezes o WhatsApp Web não consegue ler uma mensagem (aparece "Mensagem não recebida pelo WhatsApp Web. Veja no celular."). Confira o conteúdo no celular do número de atendimento.
 
 ## Administração (perfil Administrador)
 

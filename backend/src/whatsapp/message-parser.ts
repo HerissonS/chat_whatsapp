@@ -28,7 +28,15 @@ export interface ParsedMessage {
   forwarded: boolean;
   /** Reação: aponta para outra mensagem. emoji vazio = reação removida. */
   reaction: { targetId: string; emoji: string } | null;
+  /** Tipo original informado pela Evolution e campos presentes (só nomes), para diagnóstico de tipos não suportados. */
+  rawType: string | null;
+  rawKeys: string[];
 }
+
+/** Texto gravado quando a mensagem chega sem conteúdo (o WhatsApp Web não conseguiu decifrá-la). */
+export const UNREADABLE_BODY = '[Mensagem não recebida pelo WhatsApp Web. Veja no celular.]';
+/** Texto gravado para tipos que o sistema ainda não interpreta. */
+export const UNSUPPORTED_BODY = '[Tipo de mensagem não suportado. Veja no celular.]';
 
 export const IGNORED_JID_SUFFIXES = ['@broadcast', '@newsletter'];
 
@@ -58,16 +66,22 @@ function toDate(ts: unknown): Date {
   return new Date(n < 1e12 ? n * 1000 : n);
 }
 
-/** Desembrulha mensagens temporárias e de visualização única. */
+/** Desembrulha mensagens temporárias, de visualização única e outros envelopes do WhatsApp. */
 function unwrap(message: AnyObj | null | undefined): AnyObj {
   let m = message ?? {};
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 5; i++) {
     const inner =
       m.ephemeralMessage?.message ??
       m.viewOnceMessage?.message ??
       m.viewOnceMessageV2?.message ??
       m.viewOnceMessageV2Extension?.message ??
-      m.documentWithCaptionMessage?.message;
+      m.documentWithCaptionMessage?.message ??
+      m.futureProofMessage?.message ??
+      m.editedMessage?.message ??
+      m.groupMentionedMessage?.message ??
+      m.botInvokeMessage?.message ??
+      m.lottieStickerMessage?.message ??
+      m.statusMentionMessage?.message;
     if (!inner) break;
     m = inner;
   }
@@ -88,13 +102,80 @@ const LABELS: Record<string, string> = {
   pollCreationMessage: 'Enquete',
   pollCreationMessageV2: 'Enquete',
   pollCreationMessageV3: 'Enquete',
+  pollCreationMessageV4: 'Enquete',
+  eventMessage: 'Evento',
+  groupInviteMessage: 'Convite de grupo',
+  orderMessage: 'Pedido',
+  productMessage: 'Produto',
+  callLogMesssage: 'Chamada',
+  scheduledCallCreationMessage: 'Chamada agendada',
+  requestPhoneNumberMessage: 'Pedido de número de telefone',
+  newsletterAdminInviteMessage: 'Convite de canal',
 };
+
+const s = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+/**
+ * Texto de mensagens interativas (botões, listas, modelos de empresas e robôs) e das respostas a elas.
+ * Muito comum em contatos de empresas e sistemas automáticos.
+ */
+function interactiveText(m: AnyObj): string | null {
+  const parts = (...v: unknown[]) => {
+    const t = v.map(s).filter(Boolean) as string[];
+    return t.length ? [...new Set(t)].join('\n') : null;
+  };
+  if (m.buttonsResponseMessage) return parts(m.buttonsResponseMessage.selectedDisplayText, m.buttonsResponseMessage.selectedButtonId);
+  if (m.listResponseMessage) return parts(m.listResponseMessage.title, m.listResponseMessage.description, m.listResponseMessage.singleSelectReply?.selectedRowId);
+  if (m.templateButtonReplyMessage) return parts(m.templateButtonReplyMessage.selectedDisplayText, m.templateButtonReplyMessage.selectedId);
+  if (m.interactiveResponseMessage) return parts(m.interactiveResponseMessage.body?.text, m.interactiveResponseMessage.nativeFlowResponseMessage?.name);
+  if (m.buttonsMessage) {
+    const btns = ((m.buttonsMessage.buttons ?? []) as AnyObj[]).map((b) => s(b.buttonText?.displayText)).filter(Boolean).map((t) => `[${t}]`);
+    return parts(m.buttonsMessage.text, m.buttonsMessage.contentText, m.buttonsMessage.footerText, btns.join(' '));
+  }
+  if (m.listMessage) {
+    const rows = ((m.listMessage.sections ?? []) as AnyObj[]).flatMap((sec) => ((sec.rows ?? []) as AnyObj[]).map((r) => s(r.title))).filter(Boolean).map((t) => `• ${t}`);
+    return parts(m.listMessage.title, m.listMessage.description, m.listMessage.footerText, rows.join('\n'));
+  }
+  const tpl = m.templateMessage?.hydratedTemplate ?? m.templateMessage?.hydratedFourRowTemplate ?? m.templateMessage?.fourRowTemplate;
+  if (tpl) {
+    const btns = ((tpl.hydratedButtons ?? []) as AnyObj[])
+      .map((b) => s(b.quickReplyButton?.displayText ?? b.urlButton?.displayText ?? b.callButton?.displayText))
+      .filter(Boolean)
+      .map((t) => `[${t}]`);
+    return parts(tpl.hydratedTitleText, tpl.hydratedContentText, tpl.hydratedFooterText, btns.join(' '));
+  }
+  if (m.interactiveMessage) {
+    const im = m.interactiveMessage;
+    const btns = ((im.nativeFlowMessage?.buttons ?? []) as AnyObj[])
+      .map((b) => {
+        try {
+          return s((JSON.parse(String(b.buttonParamsJson ?? '{}')) as AnyObj).display_text);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .map((t) => `[${t}]`);
+    return parts(im.header?.title, im.body?.text, im.footer?.text, btns.join(' '));
+  }
+  if (m.highlyStructuredMessage) return parts(m.highlyStructuredMessage.hydratedHsm?.hydratedTemplate?.hydratedContentText);
+  if (m.eventMessage) return parts(m.eventMessage.name, m.eventMessage.description);
+  if (m.groupInviteMessage) return parts(m.groupInviteMessage.groupName, m.groupInviteMessage.caption);
+  if (m.productMessage) return parts(m.productMessage.product?.title, m.productMessage.body);
+  if (m.orderMessage) return parts(m.orderMessage.orderTitle, m.orderMessage.message);
+  return null;
+}
+
+/** Campos que não são conteúdo (metadados de criptografia e controle). */
+const META_KEYS = new Set(['messageContextInfo', 'senderKeyDistributionMessage']);
 
 /** Texto curto que descreve qualquer conteúdo (usado em citações e na lista de conversas). */
 export function previewOf(message: AnyObj | null | undefined): string {
   const m = unwrap(message);
   if (typeof m.conversation === 'string') return m.conversation;
   if (m.extendedTextMessage?.text) return m.extendedTextMessage.text as string;
+  const it = interactiveText(m);
+  if (it) return it;
   for (const [key, label] of Object.entries(LABELS)) {
     if (m[key]) {
       const caption = m[key].caption ?? m[key].fileName ?? m[key].name ?? m[key].displayName;
@@ -148,6 +229,8 @@ export function parseWaMessage(raw: AnyObj): ParsedMessage | null {
     forwarded: ctx?.isForwarded === true || (toNumber(ctx?.forwardingScore) ?? 0) > 0,
     reaction: null,
     media: null,
+    rawType: (raw.messageType as string | undefined) ?? null,
+    rawKeys: Object.keys(m).slice(0, 10),
   };
 
   if (m.reactionMessage?.key?.id) {
@@ -161,7 +244,9 @@ export function parseWaMessage(raw: AnyObj): ParsedMessage | null {
   }
 
   const msgType = String(raw.messageType ?? Object.keys(m)[0] ?? 'unknown');
-  if (SKIP_TYPES.has(msgType) && !m.conversation) return null;
+  // Controle interno (inclusive dentro de envelopes, ex.: edição = editedMessage > protocolMessage).
+  const contentKeys = Object.keys(m).filter((k) => !META_KEYS.has(k));
+  if (!m.conversation && (SKIP_TYPES.has(msgType) || (contentKeys.length > 0 && contentKeys.every((k) => SKIP_TYPES.has(k))))) return null;
 
   if (typeof m.conversation === 'string' || m.extendedTextMessage) {
     return { ...base, type: 'text', body: (m.conversation ?? m.extendedTextMessage?.text ?? '') as string };
@@ -212,7 +297,14 @@ export function parseWaMessage(raw: AnyObj): ParsedMessage | null {
     return { ...base, type: 'poll', body: `${poll.name ?? 'Enquete'}\n${opts}` };
   }
 
-  return { ...base, type: 'unknown', body: `[${LABELS[msgType] ?? 'Tipo de mensagem não suportado'}]` };
+  const it = interactiveText(m);
+  if (it) return { ...base, type: 'text', body: it };
+
+  // Sem nenhum conteúdo: o WhatsApp Web não conseguiu decifrar (o texto aparece só no celular).
+  if (!Object.keys(m).some((k) => !META_KEYS.has(k))) return { ...base, type: 'unknown', body: UNREADABLE_BODY };
+
+  const label = LABELS[msgType] ?? Object.keys(m).map((k) => LABELS[k]).find(Boolean);
+  return { ...base, type: 'unknown', body: label ? `[${label}]` : UNSUPPORTED_BODY };
 }
 
 /** Interpreta o evento messages.edited (protocolMessage): mensagem apagada (REVOKE) ou editada. */
